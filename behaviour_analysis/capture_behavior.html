@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Behavior Capture - CAPTCHA System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 800px;
+            width: 100%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            margin-top: 20px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .info {
+            background: #f0f4ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .info p {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 5px;
+        }
+
+        .challenge-area {
+            background: #f9f9f9;
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            min-height: 300px;
+            margin: 20px 0;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .challenge-area:hover {
+            background: #f0f4ff;
+            border-color: #764ba2;
+        }
+
+        .challenge-area h2 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .status.recording {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.stopped {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-item {
+            background: #f0f4ff;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-item .label {
+            color: #666;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .stat-item .value {
+            color: #667eea;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .session-info {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 14px;
+            color: #856404;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎯 User Behavior Capture System</h1>
+
+        <div class="session-info">
+            <strong>Session ID:</strong> <span id="sessionId"></span>
+        </div>
+
+        <div class="info">
+            <p><strong>Instructions:</strong></p>
+            <p>• Move your mouse naturally within the challenge area</p>
+            <p>• Click, drag, and interact as you normally would</p>
+            <p>• All movements, clicks, and timing are being recorded</p>
+            <p>• Click "Save Data" when finished to export to CSV</p>
+        </div>
+
+        <div class="challenge-area" id="challengeArea">
+            <h2>Interact with this area naturally</h2>
+            <p style="text-align: center; color: #666;">
+                Move your mouse, click, drag, and interact as you normally would.<br>
+                All your actions are being tracked for behavioral analysis.
+            </p>
+        </div>
+
+        <div class="button-group">
+            <button id="startBtn" onclick="startRecording()">Start Recording</button>
+            <button id="stopBtn" onclick="stopRecording()" disabled>Stop Recording</button>
+            <button id="saveBtn" onclick="saveToCSV()" disabled>Save Data to CSV</button>
+            <button onclick="resetSession()">Reset Session</button>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="label">Events Captured</div>
+                <div class="value" id="eventCount">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="label">Duration (s)</div>
+                <div class="value" id="duration">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="label">Mouse Moves</div>
+                <div class="value" id="moveCount">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="label">Clicks</div>
+                <div class="value" id="clickCount">0</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const SERVER_URL = 'http://localhost:5001/save_events';
+
+        // State management
+        let isRecording = false;
+        let sessionId = generateSessionId();
+        let events = [];
+        let startTime = null;
+        let lastEventTime = null;
+        let stats = {
+            moves: 0,
+            clicks: 0,
+            drags: 0
+        };
+
+        // Initialize
+        document.getElementById('sessionId').textContent = sessionId;
+
+        function generateSessionId() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        function startRecording() {
+            isRecording = true;
+            startTime = performance.now();
+            lastEventTime = startTime;
+            events = [];
+            stats = { moves: 0, clicks: 0, drags: 0 };
+
+            // UI updates
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('saveBtn').disabled = true;
+
+            const status = document.getElementById('status');
+            status.className = 'status recording';
+            status.textContent = '🔴 Recording... Interact naturally with the challenge area';
+
+            console.log('Recording started:', sessionId);
+        }
+
+        function stopRecording() {
+            isRecording = false;
+
+            // UI updates
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('saveBtn').disabled = false;
+
+            const status = document.getElementById('status');
+            status.className = 'status stopped';
+            status.textContent = '⏹️ Recording stopped. Click "Save Data" to export.';
+
+            console.log('Recording stopped. Total events:', events.length);
+        }
+
+        function resetSession() {
+            sessionId = generateSessionId();
+            document.getElementById('sessionId').textContent = sessionId;
+            events = [];
+            stats = { moves: 0, clicks: 0, drags: 0 };
+            updateStats();
+
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('saveBtn').disabled = true;
+            document.getElementById('status').textContent = '';
+
+            console.log('Session reset:', sessionId);
+        }
+
+        function captureEvent(eventType, event) {
+            if (!isRecording) return;
+
+            const currentTime = performance.now();
+            const timeSinceStart = currentTime - startTime;
+            const timeSinceLastEvent = lastEventTime ? currentTime - lastEventTime : 0;
+
+            // Get coordinates relative to the challenge area
+            const rect = document.getElementById('challengeArea').getBoundingClientRect();
+            const relativeX = event.clientX - rect.left;
+            const relativeY = event.clientY - rect.top;
+
+            // Calculate velocity if we have a previous event
+            let velocity = 0;
+            if (events.length > 0) {
+                const lastEvent = events[events.length - 1];
+                const distance = Math.sqrt(
+                    Math.pow(event.clientX - lastEvent.client_x, 2) +
+                    Math.pow(event.clientY - lastEvent.client_y, 2)
+                );
+                velocity = timeSinceLastEvent > 0 ? distance / timeSinceLastEvent * 1000 : 0; // px/s
+            }
+
+            const eventData = {
+                session_id: sessionId,
+                timestamp: Date.now(),
+                time_since_start: timeSinceStart,
+                time_since_last_event: timeSinceLastEvent,
+                event_type: eventType,
+                client_x: event.clientX,
+                client_y: event.clientY,
+                relative_x: relativeX,
+                relative_y: relativeY,
+                page_x: event.pageX,
+                page_y: event.pageY,
+                screen_x: event.screenX,
+                screen_y: event.screenY,
+                button: event.button !== undefined ? event.button : -1,
+                buttons: event.buttons !== undefined ? event.buttons : 0,
+                ctrl_key: event.ctrlKey || false,
+                shift_key: event.shiftKey || false,
+                alt_key: event.altKey || false,
+                meta_key: event.metaKey || false,
+                velocity: velocity.toFixed(2)
+            };
+
+            events.push(eventData);
+            lastEventTime = currentTime;
+
+            // Update stats
+            if (eventType === 'mousemove') stats.moves++;
+            if (eventType === 'click') stats.clicks++;
+            if (eventType === 'drag') stats.drags++;
+
+            updateStats();
+        }
+
+        function updateStats() {
+            document.getElementById('eventCount').textContent = events.length;
+            document.getElementById('moveCount').textContent = stats.moves;
+            document.getElementById('clickCount').textContent = stats.clicks;
+
+            if (startTime) {
+                const duration = ((performance.now() - startTime) / 1000).toFixed(1);
+                document.getElementById('duration').textContent = duration;
+            }
+        }
+
+        function saveToCSV() {
+            if (events.length === 0) {
+                alert('No events to save! Please record some interactions first.');
+                return;
+            }
+
+            // Option 1: Save locally as CSV file
+            const csvContent = convertToCSV(events);
+            downloadCSV(csvContent, `behavior_${sessionId}.csv`);
+
+            // Option 2: Send to server (uncomment if you want to use server)
+            // sendToServer(events);
+
+            console.log('Data saved:', events.length, 'events');
+        }
+
+        function convertToCSV(data) {
+            if (data.length === 0) return '';
+
+            // Get headers
+            const headers = Object.keys(data[0]);
+            const csvRows = [];
+
+            // Add header row
+            csvRows.push(headers.join(','));
+
+            // Add data rows
+            for (const row of data) {
+                const values = headers.map(header => {
+                    const value = row[header];
+                    // Escape values that contain commas
+                    return typeof value === 'string' && value.includes(',')
+                        ? `"${value}"`
+                        : value;
+                });
+                csvRows.push(values.join(','));
+            }
+
+            return csvRows.join('\n');
+        }
+
+        function downloadCSV(csvContent, filename) {
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+
+            if (navigator.msSaveBlob) { // IE 10+
+                navigator.msSaveBlob(blob, filename);
+            } else {
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            alert(`Data saved as ${filename}\n${events.length} events captured`);
+        }
+
+        async function sendToServer(data) {
+            try {
+                const response = await fetch(SERVER_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        events: data,
+                        metadata: {
+                            user_agent: navigator.userAgent,
+                            screen_width: window.screen.width,
+                            screen_height: window.screen.height,
+                            viewport_width: window.innerWidth,
+                            viewport_height: window.innerHeight
+                        }
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    alert('Data successfully sent to server!\n' + result.message);
+                } else {
+                    console.error('Server error:', response.statusText);
+                    alert('Failed to send data to server. Saving locally instead.');
+                    const csvContent = convertToCSV(events);
+                    downloadCSV(csvContent, `behavior_${sessionId}.csv`);
+                }
+            } catch (error) {
+                console.error('Network error:', error);
+                alert('Could not connect to server. Saving locally instead.');
+                const csvContent = convertToCSV(events);
+                downloadCSV(csvContent, `behavior_${sessionId}.csv`);
+            }
+        }
+
+        // Event listeners for the challenge area
+        const challengeArea = document.getElementById('challengeArea');
+
+        challengeArea.addEventListener('mousemove', (e) => {
+            captureEvent('mousemove', e);
+        });
+
+        challengeArea.addEventListener('mousedown', (e) => {
+            captureEvent('mousedown', e);
+        });
+
+        challengeArea.addEventListener('mouseup', (e) => {
+            captureEvent('mouseup', e);
+        });
+
+        challengeArea.addEventListener('click', (e) => {
+            captureEvent('click', e);
+        });
+
+        challengeArea.addEventListener('dblclick', (e) => {
+            captureEvent('dblclick', e);
+        });
+
+        challengeArea.addEventListener('contextmenu', (e) => {
+            captureEvent('contextmenu', e);
+        });
+
+        challengeArea.addEventListener('mouseenter', (e) => {
+            captureEvent('mouseenter', e);
+        });
+
+        challengeArea.addEventListener('mouseleave', (e) => {
+            captureEvent('mouseleave', e);
+        });
+
+        // Drag events
+        let isDragging = false;
+        challengeArea.addEventListener('dragstart', (e) => {
+            isDragging = true;
+            captureEvent('dragstart', e);
+        });
+
+        challengeArea.addEventListener('drag', (e) => {
+            if (isDragging) captureEvent('drag', e);
+        });
+
+        challengeArea.addEventListener('dragend', (e) => {
+            isDragging = false;
+            captureEvent('dragend', e);
+        });
+
+        // Update duration periodically
+        setInterval(() => {
+            if (isRecording) {
+                updateStats();
+            }
+        }, 100);
+
+        console.log('Behavior capture system initialized');
+        console.log('Session ID:', sessionId);
+    </script>
+</body>
+
+</html>
