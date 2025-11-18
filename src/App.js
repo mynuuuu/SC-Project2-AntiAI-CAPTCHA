@@ -76,6 +76,7 @@ function App() {
               <CustomSliderCaptcha
                 key={resetKeys[captcha.id]}
                 imageUrl={captcha.bgUrl}
+                captchaId={captcha.id}
                 onVerify={(data) => handleVerify(captcha.id, data)}
                 onReset={() => resetCaptcha(captcha.id)}
               />
@@ -99,7 +100,7 @@ function App() {
                       <div>Mouse Moves: {behaviorStats[captcha.id].moves}</div>
                       <div>Clicks: {behaviorStats[captcha.id].clicks}</div>
                       <div style={{ marginTop: '5px', fontStyle: 'italic', color: '#28a745' }}>
-                        📊 CSV file downloaded
+                        💾 Data saved to {captcha.id}.csv
                       </div>
                     </div>
                   )}

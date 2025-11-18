@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import './CustomSliderCaptcha.css';
 import useBehaviorTracking from './useBehaviorTracking';
 
-const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
+const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
   const [sliderPosition, setSliderPosition] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
@@ -20,6 +20,7 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
     stopRecording,
     captureEvent,
     saveToCSV,
+    sendToServer,
     getStats,
     isRecording,
   } = useBehaviorTracking();
@@ -116,7 +117,7 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
     verifyPosition();
   };
 
-  const verifyPosition = () => {
+  const verifyPosition = async () => {
     const tolerance = 10;
     const isCorrect = Math.abs(sliderPosition - puzzlePosition) < tolerance;
 
@@ -124,42 +125,54 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
     const events = stopRecording();
     const stats = getStats();
 
+    // Send data to server
+    const serverUrl = 'http://localhost:5001/save_captcha_events';
+    const result = await sendToServer(serverUrl, 'human', captchaId, isCorrect);
+    
+    if (result.success) {
+      console.log(`✓ Data saved to ${captchaId}.csv`);
+    } else {
+      console.error('Failed to save data to server:', result.error);
+    }
+
     if (isCorrect) {
       setIsVerified(true);
       setIsFailed(false);
-
-      // Save successful attempt to CSV
-      console.log('Captcha solved! Saving behavior data...');
+      
+      console.log('Captcha solved! Behavior data saved to server.');
       console.log('Stats:', stats);
-      saveToCSV('human_behavior_success');
-
-      onVerify({
-        success: true,
-        position: sliderPosition,
+      
+      onVerify({ 
+        success: true, 
+        position: sliderPosition, 
         target: puzzlePosition,
         behaviorStats: stats,
         eventCount: events.length
       });
+      
+      // Auto-reset after 1.5 seconds
+      setTimeout(() => {
+        handleReset();
+      }, 1500);
     } else {
       setIsFailed(true);
-
-      // Save failed attempt to CSV
-      console.log('Captcha failed. Saving behavior data...');
+      
+      console.log('Captcha failed. Behavior data saved to server.');
       console.log('Stats:', stats);
-      saveToCSV('human_behavior_failed');
-
+      
+      onVerify({ 
+        success: false, 
+        position: sliderPosition, 
+        target: puzzlePosition,
+        behaviorStats: stats,
+        eventCount: events.length
+      });
+      
+      // Auto-reset after 1 second
       setTimeout(() => {
         setSliderPosition(0);
         setIsFailed(false);
       }, 1000);
-
-      onVerify({
-        success: false,
-        position: sliderPosition,
-        target: puzzlePosition,
-        behaviorStats: stats,
-        eventCount: events.length
-      });
     }
   };
 
@@ -257,15 +270,9 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
           {isVerified ? '✓' : isFailed ? '✗' : '→'}
         </div>
         <div className="slider-text">
-          {isVerified ? '' : isFailed ? 'Try again' : 'Slide to verify'}
+          {isVerified ? 'Auto-resetting...' : isFailed ? 'Try again...' : 'Slide to verify'}
         </div>
       </div>
-
-      {isVerified && (
-        <button className="reset-button" onClick={handleReset}>
-          Reset
-        </button>
-      )}
     </div>
   );
 };

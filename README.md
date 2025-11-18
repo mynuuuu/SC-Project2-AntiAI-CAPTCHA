@@ -78,31 +78,43 @@ SC-Project2-AntiAI-CAPTCHA/
 
 ### Running the Application
 
-1. **Start the React app:**
-   ```bash
-   npm start
-   ```
-   The app will open at `http://localhost:3000`
+**IMPORTANT**: You must start the server first for behavior tracking to work.
 
-2. **Optional: Start the behavior server (for server-side data collection):**
+1. **Start the Flask server (Required):**
    ```bash
    cd behaviour_analysis
    python behavior_server.py
    ```
    Server runs at `http://localhost:5001`
+   
+   Keep this terminal open!
+
+2. **Start the React app (in a new terminal):**
+   ```bash
+   npm start
+   ```
+   The app will open at `http://localhost:3000`
+
+See [SERVER_SETUP.md](SERVER_SETUP.md) for detailed instructions.
 
 ## Using the Behavior Tracking
 
-### Automatic CSV Export (Default)
+### Server-Based Data Collection
 
-When you solve any captcha:
+The system saves behavior data to three specific CSV files in the `data/` folder:
+
+**Files:**
+- `data/captcha1.csv` - All attempts for Captcha 1
+- `data/captcha2.csv` - All attempts for Captcha 2
+- `data/captcha3.csv` - All attempts for Captcha 3
+
+**Workflow:**
 1. Click and drag the slider button
 2. A "Recording" indicator appears (red badge)
 3. Your mouse movements are tracked
-4. Upon completion (success or failure), a CSV file is **automatically downloaded**
-5. Check your Downloads folder for files like:
-   - `human_behavior_success_[SESSION_ID].csv`
-   - `human_behavior_failed_[SESSION_ID].csv`
+4. Upon completion, data is sent to server
+5. Data is **appended** to the appropriate CSV file
+6. Captcha **auto-resets** (ready for next attempt)
 
 ### Viewing Captured Statistics
 

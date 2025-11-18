@@ -187,8 +187,8 @@ const useBehaviorTracking = () => {
     return true;
   }, [sessionId, convertToCSV, downloadCSV]);
 
-  // Send data to server (optional)
-  const sendToServer = useCallback(async (serverUrl, userType = 'human', challengeType = 'slider_captcha') => {
+  // Send data to server (for captcha-specific files)
+  const sendToServer = useCallback(async (serverUrl, userType = 'human', captchaId = 'captcha1', success = false) => {
     if (eventsRef.current.length === 0) {
       console.warn('No events to send!');
       return { success: false, error: 'No events' };
@@ -201,6 +201,7 @@ const useBehaviorTracking = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          captcha_id: captchaId,
           session_id: sessionId,
           events: eventsRef.current,
           metadata: {
@@ -210,8 +211,7 @@ const useBehaviorTracking = () => {
             viewport_width: window.innerWidth,
             viewport_height: window.innerHeight,
           },
-          user_type: userType,
-          challenge_type: challengeType,
+          success: success,
         }),
       });
 
