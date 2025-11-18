@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import './CustomSliderCaptcha.css';
+import useBehaviorTracking from './useBehaviorTracking';
 
 const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
   const [sliderPosition, setSliderPosition] = useState(0);
@@ -13,6 +14,16 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
   const containerRef = useRef(null);
   const startXRef = useRef(0);
 
+  // Behavior tracking hook
+  const {
+    startRecording,
+    stopRecording,
+    captureEvent,
+    saveToCSV,
+    getStats,
+    isRecording,
+  } = useBehaviorTracking();
+
   // Generate random puzzle position when component mounts or image changes
   useEffect(() => {
     const randomX = Math.floor(Math.random() * 150) + 100; // Between 100-250px
@@ -23,11 +34,28 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
     e.preventDefault();
     setIsDragging(true);
     startXRef.current = e.clientX - sliderPosition;
+
+    // Start behavior recording
+    startRecording();
+    captureEvent('mousedown', e, containerRef.current);
   };
 
   const handleTouchStart = (e) => {
     setIsDragging(true);
     startXRef.current = e.touches[0].clientX - sliderPosition;
+
+    // Start behavior recording for touch
+    startRecording();
+    // Convert touch event to mouse-like event for tracking
+    const touchEvent = {
+      clientX: e.touches[0].clientX,
+      clientY: e.touches[0].clientY,
+      pageX: e.touches[0].pageX,
+      pageY: e.touches[0].pageY,
+      screenX: e.touches[0].screenX,
+      screenY: e.touches[0].screenY,
+    };
+    captureEvent('touchstart', touchEvent, containerRef.current);
   };
 
   const handleMouseMove = (e) => {
@@ -37,6 +65,9 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
     const maxSlide = containerWidth - 50; // 50px is slider button width
     const newPosition = Math.min(Math.max(0, e.clientX - startXRef.current), maxSlide);
     setSliderPosition(newPosition);
+
+    // Capture mouse movement
+    captureEvent('mousemove', e, containerRef.current);
   };
 
   const handleTouchMove = (e) => {
@@ -46,17 +77,42 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
     const maxSlide = containerWidth - 50;
     const newPosition = Math.min(Math.max(0, e.touches[0].clientX - startXRef.current), maxSlide);
     setSliderPosition(newPosition);
+
+    // Capture touch movement
+    const touchEvent = {
+      clientX: e.touches[0].clientX,
+      clientY: e.touches[0].clientY,
+      pageX: e.touches[0].pageX,
+      pageY: e.touches[0].pageY,
+      screenX: e.touches[0].screenX,
+      screenY: e.touches[0].screenY,
+    };
+    captureEvent('touchmove', touchEvent, containerRef.current);
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e) => {
     if (!isDragging) return;
     setIsDragging(false);
+
+    // Capture mouse up event
+    captureEvent('mouseup', e, containerRef.current);
     verifyPosition();
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e) => {
     if (!isDragging) return;
     setIsDragging(false);
+
+    // Capture touch end event
+    const touchEvent = {
+      clientX: e.changedTouches[0].clientX,
+      clientY: e.changedTouches[0].clientY,
+      pageX: e.changedTouches[0].pageX,
+      pageY: e.changedTouches[0].pageY,
+      screenX: e.changedTouches[0].screenX,
+      screenY: e.changedTouches[0].screenY,
+    };
+    captureEvent('touchend', touchEvent, containerRef.current);
     verifyPosition();
   };
 
@@ -64,17 +120,46 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
     const tolerance = 10;
     const isCorrect = Math.abs(sliderPosition - puzzlePosition) < tolerance;
 
+    // Stop recording
+    const events = stopRecording();
+    const stats = getStats();
+
     if (isCorrect) {
       setIsVerified(true);
       setIsFailed(false);
-      onVerify({ success: true, position: sliderPosition, target: puzzlePosition });
+
+      // Save successful attempt to CSV
+      console.log('Captcha solved! Saving behavior data...');
+      console.log('Stats:', stats);
+      saveToCSV('human_behavior_success');
+
+      onVerify({
+        success: true,
+        position: sliderPosition,
+        target: puzzlePosition,
+        behaviorStats: stats,
+        eventCount: events.length
+      });
     } else {
       setIsFailed(true);
+
+      // Save failed attempt to CSV
+      console.log('Captcha failed. Saving behavior data...');
+      console.log('Stats:', stats);
+      saveToCSV('human_behavior_failed');
+
       setTimeout(() => {
         setSliderPosition(0);
         setIsFailed(false);
       }, 1000);
-      onVerify({ success: false, position: sliderPosition, target: puzzlePosition });
+
+      onVerify({
+        success: false,
+        position: sliderPosition,
+        target: puzzlePosition,
+        behaviorStats: stats,
+        eventCount: events.length
+      });
     }
   };
 
@@ -105,6 +190,32 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
 
   return (
     <div className="custom-slider-captcha">
+      {isRecording && (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          background: 'rgba(255, 0, 0, 0.8)',
+          color: 'white',
+          padding: '5px 10px',
+          borderRadius: '5px',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px'
+        }}>
+          <span style={{
+            width: '8px',
+            height: '8px',
+            backgroundColor: 'white',
+            borderRadius: '50%',
+            animation: 'pulse 1s infinite'
+          }}></span>
+          Recording
+        </div>
+      )}
       <div className="captcha-image-container" ref={containerRef}>
         <img
           src={imageUrl}
@@ -115,13 +226,13 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset }) => {
         {imageLoaded && (
           <>
             {/* Puzzle cutout */}
-              <div
-                className="puzzle-cutout"
-                style={{
-                  left: `${puzzlePosition}px`,
-                  opacity: isVerified ? 0 : 1.0
-                }}
-              />
+            <div
+              className="puzzle-cutout"
+              style={{
+                left: `${puzzlePosition}px`,
+                opacity: isVerified ? 0 : 1.0
+              }}
+            />
             {/* Moving puzzle piece */}
             <div
               className={`puzzle-piece ${isVerified ? 'verified' : ''} ${isFailed ? 'failed' : ''}`}

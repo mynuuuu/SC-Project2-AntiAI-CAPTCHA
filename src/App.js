@@ -15,6 +15,12 @@ function App() {
     captcha3: 0
   });
 
+  const [behaviorStats, setBehaviorStats] = useState({
+    captcha1: null,
+    captcha2: null,
+    captcha3: null
+  });
+
   // Different background images for each captcha
   const captchaImages = [
     {
@@ -39,6 +45,12 @@ function App() {
 
     if (data.success) {
       setCaptchaStatus(prev => ({ ...prev, [captchaId]: true }));
+      setBehaviorStats(prev => ({ 
+        ...prev, 
+        [captchaId]: data.behaviorStats 
+      }));
+    } else {
+      console.log(`${captchaId} failed. Behavior stats:`, data.behaviorStats);
     }
   };
 
@@ -72,6 +84,25 @@ function App() {
               <div className="captcha-status">
                 <div className="status-verified">
                   <span>✓ Verified Successfully!</span>
+                  {behaviorStats[captcha.id] && (
+                    <div style={{ 
+                      marginTop: '10px', 
+                      fontSize: '12px', 
+                      color: '#666',
+                      background: '#f8f9fa',
+                      padding: '10px',
+                      borderRadius: '5px'
+                    }}>
+                      <strong>Behavior Data Captured:</strong>
+                      <div>Events: {behaviorStats[captcha.id].eventCount}</div>
+                      <div>Duration: {behaviorStats[captcha.id].duration}s</div>
+                      <div>Mouse Moves: {behaviorStats[captcha.id].moves}</div>
+                      <div>Clicks: {behaviorStats[captcha.id].clicks}</div>
+                      <div style={{ marginTop: '5px', fontStyle: 'italic', color: '#28a745' }}>
+                        📊 CSV file downloaded
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
