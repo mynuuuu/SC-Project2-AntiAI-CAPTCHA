@@ -16,7 +16,7 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for web interface communication
 
 # Configuration
-DATA_DIR = 'behavior_data'
+DATA_DIR = '../data'  # Use the data folder in parent directory
 CSV_FILENAME = 'user_behavior_events.csv'
 
 # CSV Headers - defines all the fields we're tracking
@@ -41,6 +41,8 @@ CSV_HEADERS = [
     'alt_key',
     'meta_key',
     'velocity',
+    'acceleration',  # Added from React implementation
+    'direction',     # Added from React implementation
     'user_agent',
     'screen_width',
     'screen_height',
@@ -210,6 +212,93 @@ def save_events():
         
     except Exception as e:
         print(f"Error saving events: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/save_captcha_events', methods=['POST'])
+def save_captcha_events():
+    """
+    Save events to captcha-specific CSV files (captcha1.csv, captcha2.csv, captcha3.csv)
+    
+    Expected JSON format:
+    {
+        "captcha_id": "captcha1" or "captcha2" or "captcha3",
+        "session_id": "session_xxxxx",
+        "events": [...],
+        "metadata": {...},
+        "success": true/false
+    }
+    """
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        captcha_id = data.get('captcha_id')
+        session_id = data.get('session_id')
+        events = data.get('events', [])
+        metadata = data.get('metadata', {})
+        success = data.get('success', False)
+        
+        if not captcha_id:
+            return jsonify({'error': 'captcha_id is required'}), 400
+        
+        if captcha_id not in ['captcha1', 'captcha2', 'captcha3']:
+            return jsonify({'error': 'captcha_id must be captcha1, captcha2, or captcha3'}), 400
+        
+        if not session_id:
+            return jsonify({'error': 'session_id is required'}), 400
+        
+        if not events:
+            return jsonify({'error': 'No events provided'}), 400
+        
+        # Ensure data directory exists
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR)
+        
+        # Captcha-specific file path
+        csv_filename = f'{captcha_id}.csv'
+        csv_path = os.path.join(DATA_DIR, csv_filename)
+        
+        # Initialize file with headers if it doesn't exist
+        file_exists = os.path.exists(csv_path)
+        if not file_exists:
+            with open(csv_path, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
+                writer.writeheader()
+            print(f"Created new CSV file: {csv_path}")
+        
+        # Append events to CSV
+        with open(csv_path, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, extrasaction='ignore')
+            
+            for event in events:
+                # Merge event data with metadata
+                row = {**event}
+                row['user_agent'] = metadata.get('user_agent', '')
+                row['screen_width'] = metadata.get('screen_width', '')
+                row['screen_height'] = metadata.get('screen_height', '')
+                row['viewport_width'] = metadata.get('viewport_width', '')
+                row['viewport_height'] = metadata.get('viewport_height', '')
+                row['user_type'] = 'human'  # Default to human
+                row['challenge_type'] = f"{captcha_id}_{'success' if success else 'failed'}"
+                
+                writer.writerow(row)
+        
+        print(f"✓ Appended {len(events)} events to {csv_filename} (session: {session_id}, success: {success})")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Saved {len(events)} events to {csv_filename}',
+            'captcha_id': captcha_id,
+            'session_id': session_id,
+            'events_saved': len(events),
+            'file_path': csv_path
+        }), 200
+        
+    except Exception as e:
+        print(f"Error saving captcha events: {e}")
         return jsonify({'error': str(e)}), 500
 
 
