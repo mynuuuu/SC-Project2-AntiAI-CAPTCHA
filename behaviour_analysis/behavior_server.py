@@ -261,18 +261,55 @@ def save_captcha_events():
         csv_filename = f'{captcha_id}.csv'
         csv_path = os.path.join(DATA_DIR, csv_filename)
         
-        # Initialize file with headers if it doesn't exist
+        # Check if file exists and has proper headers
         file_exists = os.path.exists(csv_path)
-        if not file_exists:
-            with open(csv_path, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-                writer.writeheader()
-            print(f"Created new CSV file: {csv_path}")
+        needs_header = False
         
-        # Append events to CSV
+        if not file_exists:
+            # File doesn't exist, we need to create it with headers
+            needs_header = True
+            print(f"File doesn't exist, will create: {csv_path}")
+        else:
+            # File exists, check if it's empty or missing headers
+            try:
+                file_size = os.path.getsize(csv_path)
+                if file_size == 0:
+                    # File exists but is empty, needs headers
+                    needs_header = True
+                    print(f"File exists but is empty, will add headers: {csv_path}")
+                else:
+                    # File has content, check if first line matches headers
+                    with open(csv_path, 'r', newline='') as f:
+                        reader = csv.reader(f)
+                        first_row = next(reader, None)
+                        if first_row is None or first_row[0] != CSV_HEADERS[0]:
+                            # File exists but doesn't have proper headers
+                            # This shouldn't happen in normal operation, but handle it gracefully
+                            print(f"WARNING: File {csv_path} exists but headers don't match. Appending data anyway.")
+                            print(f"  Expected first header: {CSV_HEADERS[0]}, Found: {first_row[0] if first_row else 'None'}")
+            except Exception as e:
+                # Error reading file, assume it needs headers if it's empty
+                file_size = os.path.getsize(csv_path) if os.path.exists(csv_path) else 0
+                if file_size == 0:
+                    needs_header = True
+                    print(f"Error reading file, will add headers: {e}")
+                else:
+                    print(f"WARNING: Error checking file headers: {e}. Will append data anyway.")
+        
+        # Always use append mode ('a') to preserve existing data
+        # This ensures data from previous sessions is never overwritten
         with open(csv_path, 'a', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, extrasaction='ignore')
             
+            # Write header only if file is new or empty
+            if needs_header:
+                writer.writeheader()
+                if file_exists:
+                    print(f"Added headers to empty file: {csv_path}")
+                else:
+                    print(f"Created new CSV file with headers: {csv_path}")
+            
+            # Append events to CSV (this preserves all existing data)
             for event in events:
                 # Merge event data with metadata
                 row = {**event}
