@@ -25,10 +25,29 @@ import time
 import logging
 from typing import Tuple, Optional, Dict, List
 from enum import Enum
+import pandas as pd
+import sys
+from pathlib import Path
+
+# Add scripts directory to path to import ml_core
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+SCRIPTS_DIR = BASE_DIR / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+try:
+    from ml_core import predict_human_prob
+    MODEL_AVAILABLE = True
+except ImportError:
+    MODEL_AVAILABLE = False
+    # Logger will be configured below, so we'll log this later if needed
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Log model availability after logger is configured
+if not MODEL_AVAILABLE:
+    logger.warning("Could not import ml_core. Model classification will be disabled.")
 
 
 class PuzzleType(Enum):
@@ -48,7 +67,8 @@ class CVAttacker:
     """
     
     def __init__(self, headless: bool = False, wait_time: int = 3, 
-                 chromedriver_path: Optional[str] = None, browser_binary: Optional[str] = None):
+                 chromedriver_path: Optional[str] = None, browser_binary: Optional[str] = None,
+                 use_model_classification: bool = True):
         """
         Initialize the CV attacker
         
@@ -57,10 +77,13 @@ class CVAttacker:
             wait_time: Time to wait for page elements to load
             chromedriver_path: Optional path to ChromeDriver executable
             browser_binary: Optional path to browser binary (e.g., '/Applications/Arc.app/Contents/MacOS/Arc')
+            use_model_classification: Whether to use ML model to classify attack behavior
         """
         self.wait_time = wait_time
         self.driver = None
         self.headless = headless
+        self.use_model_classification = use_model_classification and MODEL_AVAILABLE
+        self.behavior_events = []  # Store mouse events for model classification
         self.setup_driver(chromedriver_path, browser_binary)
         
     def setup_driver(self, chromedriver_path: Optional[str] = None, browser_binary: Optional[str] = None):
@@ -361,6 +384,7 @@ class CVAttacker:
                               end_x: float, end_y: float) -> bool:
         """
         Simulate human-like mouse drag for slider movement
+        Also tracks mouse events for ML model classification
         
         Args:
             element: Element to drag
@@ -371,10 +395,21 @@ class CVAttacker:
             True if drag completed successfully
         """
         try:
+            # Reset behavior events for this attack
+            self.behavior_events = []
+            start_time = time.time()
+            last_event_time = start_time
+            last_position = (start_x, start_y)
+            
             actions = ActionChains(self.driver)
             
             # Move to element first
             actions.move_to_element(element)
+            
+            # Record mousedown event
+            if self.use_model_classification:
+                self._record_event('mousedown', start_x, start_y, start_time, 0, last_position)
+            
             actions.click_and_hold()
             
             # Simulate human-like movement with slight variations
@@ -384,6 +419,8 @@ class CVAttacker:
             
             variation_x_prev = 0
             variation_y_prev = 0
+            current_x = start_x
+            current_y = start_y
             
             for i in range(steps):
                 # Add slight random variation to simulate human movement
@@ -394,6 +431,19 @@ class CVAttacker:
                 move_x = dx + variation_x - variation_x_prev
                 move_y = dy + variation_y - variation_y_prev
                 
+                current_x += move_x
+                current_y += move_y
+                current_time = time.time()
+                
+                # Record mousemove event
+                if self.use_model_classification:
+                    time_since_start = (current_time - start_time) * 1000  # Convert to ms
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mousemove', current_x, current_y, time_since_start, 
+                                     time_since_last, last_position)
+                    last_position = (current_x, current_y)
+                    last_event_time = current_time
+                
                 actions.move_by_offset(int(move_x), int(move_y))
                 
                 variation_x_prev = variation_x
@@ -401,6 +451,14 @@ class CVAttacker:
                 
                 # Small delay to simulate human movement speed
                 time.sleep(0.01)
+            
+            # Record mouseup event
+            end_time = time.time()
+            if self.use_model_classification:
+                time_since_start = (end_time - start_time) * 1000
+                time_since_last = (end_time - last_event_time) * 1000
+                self._record_event('mouseup', current_x, current_y, time_since_start, 
+                                 time_since_last, last_position)
             
             actions.release()
             actions.perform()
@@ -414,6 +472,70 @@ class CVAttacker:
         except Exception as e:
             logger.error(f"Error during slider drag: {e}")
             return False
+    
+    def _record_event(self, event_type: str, x: float, y: float, 
+                     time_since_start: float, time_since_last: float, 
+                     last_position: Tuple[float, float]):
+        """
+        Record a mouse event for ML model classification
+        
+        Args:
+            event_type: Type of event (mousedown, mousemove, mouseup)
+            x, y: Current mouse position
+            time_since_start: Time since drag started (ms)
+            time_since_last: Time since last event (ms)
+            last_position: Previous mouse position for velocity calculation
+        """
+        # Calculate velocity (pixels per second)
+        distance = np.sqrt((x - last_position[0])**2 + (y - last_position[1])**2)
+        velocity = (distance / time_since_last * 1000) if time_since_last > 0 else 0
+        
+        event = {
+            'time_since_start': time_since_start,
+            'time_since_last_event': time_since_last,
+            'event_type': event_type,
+            'client_x': x,
+            'client_y': y,
+            'velocity': velocity
+        }
+        
+        self.behavior_events.append(event)
+    
+    def classify_behavior(self) -> Optional[Dict]:
+        """
+        Classify the captured behavior using the ML model
+        
+        Returns:
+            Dictionary with classification results, or None if model unavailable
+        """
+        if not self.use_model_classification or not self.behavior_events:
+            return None
+        
+        try:
+            # Convert events to DataFrame
+            df = pd.DataFrame(self.behavior_events)
+            
+            if len(df) == 0:
+                logger.warning("No behavior events to classify")
+                return None
+            
+            # Use the model to predict
+            prob_human = predict_human_prob(df)
+            decision = "human" if prob_human >= 0.5 else "bot"
+            
+            result = {
+                'prob_human': float(prob_human),
+                'decision': decision,
+                'num_events': len(df),
+                'is_human': prob_human >= 0.5
+            }
+            
+            logger.info(f"Behavior classified as: {decision} (probability: {prob_human:.3f})")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error classifying behavior: {e}")
+            return None
     
     def solve_rotation_puzzle(self, captcha_element) -> bool:
         """
@@ -458,19 +580,21 @@ class CVAttacker:
     def attack_captcha(self, url: str, captcha_selector: str = ".custom-slider-captcha") -> Dict:
         """
         Main attack method - attempts to solve a CAPTCHA on a webpage
+        Also classifies the attack behavior using the ML model
         
         Args:
             url: URL of the page containing the CAPTCHA
             captcha_selector: CSS selector for the CAPTCHA element
             
         Returns:
-            Dictionary with attack results
+            Dictionary with attack results including ML model classification
         """
         result = {
             'success': False,
             'puzzle_type': None,
             'attempts': 0,
-            'error': None
+            'error': None,
+            'model_classification': None
         }
         
         try:
@@ -511,6 +635,20 @@ class CVAttacker:
             except:
                 pass
             
+            # Classify behavior using ML model
+            if self.use_model_classification:
+                classification = self.classify_behavior()
+                result['model_classification'] = classification
+                
+                if classification:
+                    logger.info(f"ML Model Classification: {classification['decision']} "
+                              f"(probability: {classification['prob_human']:.3f})")
+                    # The CAPTCHA system would reject if classified as bot
+                    if not classification['is_human']:
+                        logger.warning("⚠️  Attack behavior classified as BOT by ML model!")
+                    else:
+                        logger.info("✓ Attack behavior classified as HUMAN by ML model")
+            
         except Exception as e:
             logger.error(f"Error during attack: {e}")
             result['error'] = str(e)
@@ -526,22 +664,33 @@ class CVAttacker:
 
 def main():
     """Example usage of the CV attacker"""
-    attacker = CVAttacker(headless=False)
+    attacker = CVAttacker(headless=False, use_model_classification=True)
     
     try:
         # Attack the local CAPTCHA system
         url = "http://localhost:3000"  # Adjust to your React app URL
         result = attacker.attack_captcha(url)
         
-        print("\n" + "="*50)
+        print("\n" + "="*60)
         print("ATTACK RESULTS")
-        print("="*50)
-        print(f"Success: {result['success']}")
+        print("="*60)
+        print(f"CAPTCHA Solved: {'✓ YES' if result['success'] else '✗ NO'}")
         print(f"Puzzle Type: {result['puzzle_type']}")
         print(f"Attempts: {result['attempts']}")
+        
+        if result['model_classification']:
+            classification = result['model_classification']
+            print("\n" + "-"*60)
+            print("ML MODEL CLASSIFICATION")
+            print("-"*60)
+            print(f"Decision: {classification['decision'].upper()}")
+            print(f"Human Probability: {classification['prob_human']:.3f}")
+            print(f"Events Captured: {classification['num_events']}")
+            print(f"Would be accepted: {'✓ YES' if classification['is_human'] else '✗ NO (BOT DETECTED)'}")
+        
         if result['error']:
-            print(f"Error: {result['error']}")
-        print("="*50)
+            print(f"\nError: {result['error']}")
+        print("="*60)
         
     finally:
         attacker.close()

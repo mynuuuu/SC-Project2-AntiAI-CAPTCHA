@@ -1,4 +1,4 @@
-#!/Users/sayanide/Projects/SC-Project2-AntiAI-CAPTCHA/venv/bin/python3
+#!/Users/swetha/Downloads/capsys/SC-Project2-AntiAI-CAPTCHA/venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys

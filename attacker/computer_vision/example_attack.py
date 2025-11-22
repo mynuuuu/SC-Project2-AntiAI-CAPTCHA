@@ -16,7 +16,7 @@ def attack_single_captcha(url: str, headless: bool = False):
         url: URL of the page containing the CAPTCHA
         headless: Run browser in headless mode
     """
-    attacker = CVAttacker(headless=headless)
+    attacker = CVAttacker(headless=headless, use_model_classification=True)
     
     try:
         print(f"\n{'='*60}")
@@ -30,12 +30,23 @@ def attack_single_captcha(url: str, headless: bool = False):
         print("\n" + "="*60)
         print("ATTACK RESULTS")
         print("="*60)
-        print(f"Success: {'✓ YES' if result['success'] else '✗ NO'}")
+        print(f"CAPTCHA Solved: {'✓ YES' if result['success'] else '✗ NO'}")
         print(f"Puzzle Type: {result['puzzle_type']}")
         print(f"Attempts: {result['attempts']}")
         print(f"Time Elapsed: {elapsed_time:.2f} seconds")
+        
+        if result['model_classification']:
+            classification = result['model_classification']
+            print("\n" + "-"*60)
+            print("ML MODEL CLASSIFICATION")
+            print("-"*60)
+            print(f"Decision: {classification['decision'].upper()}")
+            print(f"Human Probability: {classification['prob_human']:.3f}")
+            print(f"Events Captured: {classification['num_events']}")
+            print(f"Would be accepted: {'✓ YES' if classification['is_human'] else '✗ NO (BOT DETECTED)'}")
+        
         if result['error']:
-            print(f"Error: {result['error']}")
+            print(f"\nError: {result['error']}")
         print("="*60 + "\n")
         
         return result['success']
@@ -67,7 +78,7 @@ def attack_multiple_captchas(url: str, num_attempts: int = 5, headless: bool = F
         print(f"\nAttempt {i+1}/{num_attempts}")
         print("-" * 60)
         
-        attacker = CVAttacker(headless=headless)
+        attacker = CVAttacker(headless=headless, use_model_classification=True)
         
         try:
             start_time = time.time()

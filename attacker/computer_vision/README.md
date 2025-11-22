@@ -13,6 +13,10 @@ A generic computer vision-based attacker designed to solve pictorial CAPTCHAs wi
   - Contour analysis
   - Color-based region detection
 - **Human-like Simulation**: Simulates natural mouse movements and interactions
+- **ML Model Integration**: Uses your trained behavior model to classify attack behavior as human or bot
+  - Automatically tracks mouse events during attacks
+  - Classifies behavior using Random Forest + Gradient Boosting ensemble
+  - Reports whether the attack would be detected as bot by the CAPTCHA system
 
 ## Supported CAPTCHA Types
 
@@ -67,16 +71,23 @@ pip install -r requirements.txt
 ```python
 from cv_attacker import CVAttacker
 
-# Initialize attacker
-attacker = CVAttacker(headless=False)
+# Initialize attacker with ML model classification enabled
+attacker = CVAttacker(headless=False, use_model_classification=True)
 
 try:
     # Attack a CAPTCHA on a webpage
     url = "http://localhost:3000"
     result = attacker.attack_captcha(url)
     
-    print(f"Success: {result['success']}")
+    print(f"CAPTCHA Solved: {result['success']}")
     print(f"Puzzle Type: {result['puzzle_type']}")
+    
+    # Check ML model classification
+    if result['model_classification']:
+        classification = result['model_classification']
+        print(f"ML Classification: {classification['decision']}")
+        print(f"Human Probability: {classification['prob_human']:.3f}")
+        print(f"Would be accepted: {classification['is_human']}")
     
 finally:
     attacker.close()
@@ -107,6 +118,27 @@ python cv_attacker.py
    - Simulates human-like mouse drag with slight variations
    - Includes natural delays and movement patterns
 
+### ML Model Classification
+
+During the attack, the attacker:
+
+1. **Tracks Mouse Events**: Records all mouse movements, clicks, and releases with:
+   - Timestamps (time since start, time since last event)
+   - Coordinates (client_x, client_y)
+   - Velocity calculations
+
+2. **Converts to Model Format**: Transforms events into the DataFrame format expected by your trained model
+
+3. **Classifies Behavior**: Uses the ensemble model (Random Forest + Gradient Boosting) to predict:
+   - Probability of being human (0-1)
+   - Binary decision (human/bot)
+   - Whether the attack would be accepted by the CAPTCHA system
+
+4. **Reports Results**: Includes classification in attack results, showing:
+   - If the CAPTCHA was solved (visual puzzle)
+   - If the behavior was classified as human or bot
+   - The probability score
+
 ### Computer Vision Techniques Used
 
 - **Canny Edge Detection**: For detecting boundaries and shapes
@@ -125,12 +157,21 @@ attacker/computer_vision/
 └── README.md          # This file
 ```
 
+## ML Model Requirements
+
+The attacker automatically loads your trained models from `models/`:
+- `rf_model.pkl` - Random Forest classifier
+- `gb_model.pkl` - Gradient Boosting classifier
+
+If models are not found, classification will be disabled with a warning.
+
 ## Limitations
 
 - Currently fully implemented for slider puzzles only
 - Rotation and piece placement puzzles are planned but not yet complete
 - May struggle with heavily obfuscated or distorted images
 - Performance depends on image quality and CAPTCHA complexity
+- ML model classification requires the models to be trained and available in `models/` directory
 
 ## Future Enhancements
 
