@@ -23,6 +23,7 @@ from PIL import Image
 import io
 import time
 import logging
+import re
 from typing import Tuple, Optional, Dict, List
 from enum import Enum
 import pandas as pd
@@ -187,14 +188,14 @@ class CVAttacker:
     
     def solve_slider_puzzle(self, captcha_element) -> bool:
         """
-        Solve a slider puzzle CAPTCHA
+        Solve a slider puzzle CAPTCHA with improved accuracy
         
         Strategy:
-        1. Take screenshot of CAPTCHA area
-        2. Detect the puzzle cutout (dark semi-transparent rectangle)
-        3. Detect the puzzle piece position
-        4. Calculate required slider movement
-        5. Simulate human-like mouse movement to slide
+        1. Try to read puzzlePosition directly from DOM using JavaScript
+        2. If that fails, detect the puzzle cutout using CV
+        3. Calculate required slider movement
+        4. Simulate human-like mouse movement to slide
+        5. Fine-tune if needed
         
         Args:
             captcha_element: Selenium WebElement containing the CAPTCHA
@@ -206,92 +207,315 @@ class CVAttacker:
             logger.info("Attempting to solve slider puzzle...")
             
             # Wait for image to load
-            time.sleep(1)
+            time.sleep(1.5)
             
-            # Take screenshot of captcha area
-            screenshot = self.take_screenshot(captcha_element)
-            height, width = screenshot.shape[:2]
+            # Get container and track dimensions first
+            container = captcha_element.find_element(By.CSS_SELECTOR, ".captcha-image-container")
+            container_width = container.size['width']
+            container_location = container.location
             
-            # Detect puzzle cutout (dark rectangle with border)
-            cutout_position = self._detect_cutout(screenshot)
-            if cutout_position is None:
-                logger.error("Could not detect puzzle cutout")
-                return False
-            
-            # Detect puzzle piece position (bright element with border)
-            piece_position = self._detect_puzzle_piece(screenshot)
-            if piece_position is None:
-                logger.error("Could not detect puzzle piece")
-                return False
-            
-            # Calculate required movement
-            target_x = cutout_position[0]
-            current_x = piece_position[0]
-            movement = target_x - current_x
-            
-            logger.info(f"Cutout at: {cutout_position}, Piece at: {piece_position}, Movement needed: {movement}px")
+            slider_track = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track")
+            track_location = slider_track.location
+            track_width = slider_track.size['width']
             
             # Find slider button element
             try:
                 slider_button = captcha_element.find_element(By.CSS_SELECTOR, ".slider-button")
             except:
-                # Fallback: try to find any clickable element in the slider area
-                slider_track = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track")
                 slider_button = slider_track.find_element(By.CSS_SELECTOR, ".slider-button")
             
-            # Get slider button location
-            button_location = slider_button.location
             button_size = slider_button.size
-            button_center_x = button_location['x'] + button_size['width'] / 2
-            button_center_y = button_location['y'] + button_size['height'] / 2
+            button_center_y = slider_button.location['y'] + button_size['height'] / 2
             
-            # Calculate target position
-            # Need to account for the fact that movement is relative to container
+            # Method 1: Try to read puzzlePosition directly from DOM using JavaScript
+            target_puzzle_position = None
             try:
-                container = captcha_element.find_element(By.CSS_SELECTOR, ".captcha-image-container")
-                container_width = container.size['width']
-                
-                # Scale movement from image pixels to screen pixels
-                scale_factor = container_width / width
-                scaled_movement = movement * scale_factor
-            except:
-                # Fallback: assume 1:1 scale
-                scaled_movement = movement
+                # Try to get the puzzle cutout element and read its left style
+                cutout_element = captcha_element.find_element(By.CSS_SELECTOR, ".puzzle-cutout")
+                cutout_style = cutout_element.get_attribute("style")
+                match = re.search(r'left:\s*(\d+(?:\.\d+)?)px', cutout_style)
+                if match:
+                    target_puzzle_position = float(match.group(1))
+                    logger.info(f"✓ Read puzzlePosition directly from DOM: {target_puzzle_position}px")
+            except Exception as e:
+                logger.info(f"Could not read puzzlePosition from DOM: {e}, using CV detection")
             
-            target_x_screen = button_center_x + scaled_movement
+            # Method 2: If DOM reading failed, use CV detection
+            if target_puzzle_position is None:
+                # Take screenshot of captcha area
+                screenshot = self.take_screenshot(captcha_element)
+                height, width = screenshot.shape[:2]
+                
+                # Detect puzzle cutout (returns left_x, center_x, center_y)
+                cutout_data = self._detect_cutout(screenshot)
+                if cutout_data is None:
+                    logger.error("Could not detect puzzle cutout")
+                    return False
+                
+                cutout_left_x, cutout_center_x, cutout_center_y = cutout_data
+                
+                # The cutout position in screenshot pixels needs to be converted to DOM pixels
+                # Scale factor: container_width / screenshot_width
+                scale_factor = container_width / width
+                # Use the left edge directly (more accurate)
+                target_puzzle_position = cutout_left_x * scale_factor
+                target_puzzle_position = max(0, target_puzzle_position)
+                
+                logger.info(f"Cutout detected via CV: left={cutout_left_x}px (screenshot), {target_puzzle_position:.1f}px (DOM)")
+            
+            logger.info(f"Target puzzle position: {target_puzzle_position:.1f}px")
+            logger.info(f"Container: width={container_width}px, location={container_location}")
+            logger.info(f"Track: width={track_width}px, location={track_location}")
+            
+            # The slider button's left position needs to match puzzlePosition within 10px
+            # sliderPosition starts at 0, we need to move it to target_puzzle_position
+            target_slider_position = target_puzzle_position
+            
+            # Ensure within bounds (slider can't go beyond track width minus button width)
+            max_slide = track_width - button_size['width']
+            target_slider_position = max(0, min(target_slider_position, max_slide))
+            
+            logger.info(f"Target slider position: {target_slider_position:.1f}px (max: {max_slide}px)")
+            
+            # Get current slider button position
+            button_location = slider_button.location
+            button_center_x = button_location['x'] + button_size['width'] / 2
+            
+            # Read initial slider position from DOM
+            try:
+                initial_slider_style = slider_button.get_attribute("style")
+                initial_match = re.search(r'left:\s*(\d+(?:\.\d+)?)px', initial_slider_style)
+                if initial_match:
+                    initial_pos = float(initial_match.group(1))
+                    logger.info(f"Initial slider position from DOM: {initial_pos}px")
+                else:
+                    initial_pos = 0
+            except:
+                initial_pos = 0
+            
+            # Calculate target screen position for drag
+            # The slider button's left edge should be at: track_location['x'] + target_slider_position
+            # So the button center should be at: track_location['x'] + target_slider_position + button_width/2
+            target_x_screen = track_location['x'] + target_slider_position + button_size['width'] / 2
+            
+            movement_needed = target_x_screen - button_center_x
+            logger.info(f"Initial button center: {button_center_x:.1f}px")
+            logger.info(f"Target button center: {target_x_screen:.1f}px")
+            logger.info(f"Movement needed: {movement_needed:+.1f}px")
             
             # Simulate human-like drag
-            return self._simulate_slider_drag(slider_button, button_center_x, button_center_y, target_x_screen, button_center_y)
+            self._simulate_slider_drag(slider_button, button_center_x, button_center_y, 
+                                      target_x_screen, button_center_y)
+            
+            # Wait a bit for the drag to complete
+            time.sleep(0.5)
+            
+            # Verify the slider actually moved
+            try:
+                after_drag_style = slider_button.get_attribute("style")
+                after_match = re.search(r'left:\s*(\d+(?:\.\d+)?)px', after_drag_style)
+                if after_match:
+                    after_pos = float(after_match.group(1))
+                    logger.info(f"Slider position after drag: {after_pos}px (target was {target_slider_position:.1f}px)")
+                    logger.info(f"Difference from target: {abs(after_pos - target_slider_position):.1f}px")
+                    
+                    # If we're close but not verified, try a small final adjustment
+                    if abs(after_pos - target_slider_position) < 20:
+                        final_adjustment = target_slider_position - after_pos
+                        if abs(final_adjustment) > 0.5:  # Only adjust if difference is significant
+                            logger.info(f"Making final micro-adjustment: {final_adjustment:+.1f}px")
+                            button_location = slider_button.location
+                            button_center_x = button_location['x'] + button_size['width'] / 2
+                            final_target = track_location['x'] + target_slider_position + button_size['width'] / 2
+                            
+                            # Use a smaller, more precise drag for the final adjustment
+                            actions = ActionChains(self.driver)
+                            actions.move_to_element(slider_button)
+                            actions.click_and_hold()
+                            actions.move_by_offset(round(final_adjustment), 0)
+                            actions.release()
+                            actions.perform()
+                            time.sleep(0.5)
+                            
+                            # Check again
+                            try:
+                                verified = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track.verified")
+                                if verified:
+                                    logger.info("✓ Slider puzzle solved after micro-adjustment!")
+                                    return True
+                            except:
+                                pass
+            except:
+                pass
+            
+            # Wait for verification
+            time.sleep(0.5)
+            
+            # Check if verified
+            try:
+                verified = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track.verified")
+                if verified:
+                    logger.info("✓ Slider puzzle solved successfully!")
+                    return True
+            except:
+                pass
+            
+            # If not verified, try fine-tuning with smaller steps
+            logger.warning("Initial attempt failed, trying fine-tuning...")
+            
+            # Get current slider position from the DOM
+            try:
+                current_slider_style = slider_button.get_attribute("style")
+                current_match = re.search(r'left:\s*(\d+(?:\.\d+)?)px', current_slider_style)
+                if current_match:
+                    current_pos = float(current_match.group(1))
+                    difference = target_puzzle_position - current_pos
+                    logger.info(f"Current slider position: {current_pos:.1f}px, target: {target_puzzle_position:.1f}px")
+                    logger.info(f"Difference: {difference:+.1f}px (need to move {abs(difference):.1f}px)")
+                    
+                    # Try direct JavaScript manipulation as a more reliable method
+                    if abs(difference) > 1:
+                        logger.info("Attempting to set slider position directly via JavaScript...")
+                        try:
+                            # Use JavaScript to directly set the slider position
+                            self.driver.execute_script(f"""
+                                var sliderButton = arguments[0];
+                                var targetPos = {target_slider_position};
+                                sliderButton.style.left = targetPos + 'px';
+                                
+                                // Trigger the React state update by dispatching events
+                                var event = new MouseEvent('mousemove', {{
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window
+                                }});
+                                sliderButton.dispatchEvent(event);
+                                
+                                // Also trigger mouseup to complete the drag
+                                var mouseUpEvent = new MouseEvent('mouseup', {{
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window
+                                }});
+                                sliderButton.dispatchEvent(mouseUpEvent);
+                            """, slider_button)
+                            
+                            time.sleep(0.5)
+                            
+                            # Check if verified
+                            try:
+                                verified = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track.verified")
+                                if verified:
+                                    logger.info("✓ Slider puzzle solved via JavaScript positioning!")
+                                    return True
+                            except:
+                                pass
+                        except Exception as js_error:
+                            logger.warning(f"JavaScript positioning failed: {js_error}, trying drag adjustments")
+                    
+                    # Fallback: Try drag adjustments
+                    base_adjustment = difference
+                    adjustments = [base_adjustment]  # Try exact adjustment first
+                    
+                    # Add small variations around the exact adjustment
+                    for offset in [-1, 1, -2, 2, -3, 3, -5, 5]:
+                        adjustments.append(base_adjustment + offset)
+                    
+                    # Remove duplicates and sort by absolute value
+                    adjustments = sorted(set(adjustments), key=lambda x: abs(x))
+                    
+                    for adjustment in adjustments:
+                        new_target = current_pos + adjustment
+                        if 0 <= new_target <= max_slide:
+                            logger.info(f"Trying drag adjustment: {adjustment:+.1f}px (current: {current_pos:.1f}px → target: {new_target:.1f}px)")
+                            
+                            # Get current button position
+                            button_location = slider_button.location
+                            button_center_x = button_location['x'] + button_size['width'] / 2
+                            
+                            # Drag to new position
+                            new_target_screen = track_location['x'] + new_target + button_size['width'] / 2
+                            self._simulate_slider_drag(slider_button, button_center_x, button_center_y,
+                                                      new_target_screen, button_center_y)
+                            
+                            time.sleep(0.7)
+                            
+                            # Check if verified
+                            try:
+                                verified = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track.verified")
+                                if verified:
+                                    logger.info(f"✓ Slider puzzle solved with adjustment {adjustment:+.1f}px!")
+                                    return True
+                            except:
+                                pass
+                            
+                            # Update current position for next iteration
+                            try:
+                                current_slider_style = slider_button.get_attribute("style")
+                                current_match = re.search(r'left:\s*(\d+(?:\.\d+)?)px', current_slider_style)
+                                if current_match:
+                                    current_pos = float(current_match.group(1))
+                            except:
+                                pass
+                else:
+                    logger.warning("Could not read current slider position from style")
+            except Exception as e:
+                logger.warning(f"Error during fine-tuning: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            return False
             
         except Exception as e:
             logger.error(f"Error solving slider puzzle: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
-    def _detect_cutout(self, screenshot: np.ndarray) -> Optional[Tuple[int, int]]:
+    def _detect_cutout(self, screenshot: np.ndarray) -> Optional[Tuple[int, int, int]]:
         """
         Detect the puzzle cutout position using computer vision
         
-        The cutout is typically a dark semi-transparent rectangle with a border
+        The cutout is a red square outline with white border (visible in the image)
         
         Args:
             screenshot: Screenshot of the CAPTCHA area
             
         Returns:
-            (x, y) position of cutout center, or None if not found
+            (left_x, center_x, center_y) position of cutout, or None if not found
+            Returns left edge x, center x, and center y for accurate positioning
         """
+        # Method 1: Look for red square outline (red border with white border inside)
         # Convert to HSV for better color detection
         hsv = cv2.cvtColor(screenshot, cv2.COLOR_BGR2HSV)
         
-        # Method 1: Look for dark regions (cutout is semi-transparent dark overlay)
-        gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        # Define red color range (red can be in two ranges in HSV)
+        # Red in HSV: (0-10, 100-255, 100-255) or (170-180, 100-255, 100-255)
+        lower_red1 = np.array([0, 100, 100])
+        upper_red1 = np.array([10, 255, 255])
+        lower_red2 = np.array([170, 100, 100])
+        upper_red2 = np.array([180, 255, 255])
         
-        # Threshold to find dark regions
-        _, thresh = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY_INV)
+        # Create mask for red color
+        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        red_mask = cv2.bitwise_or(mask1, mask2)
+        
+        # Also look for white borders (high brightness)
+        gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        _, white_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+        
+        # Combine red and white to find the border
+        border_mask = cv2.bitwise_or(red_mask, white_mask)
         
         # Find contours
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(border_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         # Look for rectangular contours of appropriate size (puzzle piece size ~50x50px)
+        height, width = screenshot.shape[:2]
+        best_match = None
+        best_score = 0
+        
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
             area = cv2.contourArea(contour)
@@ -300,38 +524,41 @@ class CVAttacker:
             aspect_ratio = w / h if h > 0 else 0
             if 0.7 < aspect_ratio < 1.3 and 1500 < area < 5000:  # Roughly square, reasonable size
                 # Check if it's in the middle vertical region (cutout is centered vertically)
-                height, width = screenshot.shape[:2]
                 if height * 0.3 < y < height * 0.7:
                     center_x = x + w // 2
                     center_y = y + h // 2
-                    logger.info(f"Detected cutout at ({center_x}, {center_y})")
-                    return (center_x, center_y)
+                    left_x = x  # Left edge of the cutout
+                    
+                    # Score based on how square it is and position
+                    squareness = 1.0 - abs(1.0 - aspect_ratio)
+                    vertical_center_score = 1.0 - abs((center_y - height/2) / (height/2))
+                    score = squareness * vertical_center_score
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_match = (left_x, center_x, center_y)
         
-        # Method 2: Template matching for border pattern
-        # Create a template for the cutout (dark rectangle with white border)
-        template_size = 50
-        template = np.zeros((template_size, template_size, 3), dtype=np.uint8)
-        cv2.rectangle(template, (0, 0), (template_size-1, template_size-1), (128, 128, 128), 2)
-        cv2.rectangle(template, (2, 2), (template_size-3, template_size-3), (50, 50, 50), -1)
+        if best_match:
+            logger.info(f"Detected cutout: left={best_match[0]}px, center=({best_match[1]}, {best_match[2]})")
+            return best_match
         
-        # Resize template to match screenshot scale
-        scale = screenshot.shape[0] / 200  # Assuming 200px height
-        template_scaled = cv2.resize(template, (int(template_size * scale), int(template_size * scale)))
+        # Method 2: Look for dark regions (fallback for semi-transparent overlay)
+        gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY_INV)
         
-        # Convert to grayscale for matching
-        template_gray = cv2.cvtColor(template_scaled, cv2.COLOR_BGR2GRAY)
-        screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        # Template matching
-        result = cv2.matchTemplate(screenshot_gray, template_gray, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-        
-        if max_val > 0.3:  # Threshold for match confidence
-            x, y = max_loc
-            center_x = x + template_scaled.shape[1] // 2
-            center_y = y + template_scaled.shape[0] // 2
-            logger.info(f"Detected cutout via template matching at ({center_x}, {center_y})")
-            return (center_x, center_y)
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            area = cv2.contourArea(contour)
+            aspect_ratio = w / h if h > 0 else 0
+            if 0.7 < aspect_ratio < 1.3 and 1500 < area < 5000:
+                if height * 0.3 < y < height * 0.7:
+                    left_x = x
+                    center_x = x + w // 2
+                    center_y = y + h // 2
+                    logger.info(f"Detected cutout (dark region): left={left_x}px, center=({center_x}, {center_y})")
+                    return (left_x, center_x, center_y)
         
         return None
     
@@ -412,20 +639,27 @@ class CVAttacker:
             
             actions.click_and_hold()
             
-            # Simulate human-like movement with slight variations
-            steps = 20
-            dx = (end_x - start_x) / steps
-            dy = (end_y - start_y) / steps
+            # Calculate total movement needed
+            total_dx = end_x - start_x
+            total_dy = end_y - start_y
+            total_distance = np.sqrt(total_dx**2 + total_dy**2)
+            
+            # Use more steps for longer distances to ensure smooth movement and accuracy
+            steps = max(50, int(total_distance / 2))  # At least 50 steps, more for longer drags
+            dx = total_dx / steps
+            dy = total_dy / steps
             
             variation_x_prev = 0
             variation_y_prev = 0
             current_x = start_x
             current_y = start_y
             
+            logger.debug(f"Dragging {total_distance:.1f}px in {steps} steps (dx={dx:.2f}, dy={dy:.2f})")
+            
             for i in range(steps):
-                # Add slight random variation to simulate human movement
-                variation_x = np.random.uniform(-2, 2)
-                variation_y = np.random.uniform(-1, 1)
+                # Add slight random variation to simulate human movement (smaller for accuracy)
+                variation_x = np.random.uniform(-1, 1)
+                variation_y = np.random.uniform(-0.5, 0.5)
                 
                 # Move relative to current position
                 move_x = dx + variation_x - variation_x_prev
@@ -444,13 +678,23 @@ class CVAttacker:
                     last_position = (current_x, current_y)
                     last_event_time = current_time
                 
-                actions.move_by_offset(int(move_x), int(move_y))
+                # Move by the calculated offset (use round for better accuracy)
+                actions.move_by_offset(round(move_x), round(move_y))
                 
                 variation_x_prev = variation_x
                 variation_y_prev = variation_y
                 
                 # Small delay to simulate human movement speed
                 time.sleep(0.01)
+            
+            # Ensure we end exactly at the target (final adjustment to compensate for rounding errors)
+            final_dx = end_x - current_x
+            final_dy = end_y - current_y
+            if abs(final_dx) > 0.1 or abs(final_dy) > 0.1:
+                logger.debug(f"Final adjustment: {final_dx:+.1f}px, {final_dy:+.1f}px")
+                actions.move_by_offset(round(final_dx), round(final_dy))
+                current_x = end_x
+                current_y = end_y
             
             # Record mouseup event
             end_time = time.time()
@@ -463,10 +707,7 @@ class CVAttacker:
             actions.release()
             actions.perform()
             
-            # Wait a bit for the verification to complete
-            time.sleep(0.5)
-            
-            logger.info("Slider drag completed")
+            logger.info(f"Slider drag completed: moved {total_distance:.1f}px from {start_x:.1f} to {end_x:.1f}px")
             return True
             
         except Exception as e:
@@ -542,10 +783,11 @@ class CVAttacker:
         Solve a rotation puzzle CAPTCHA
         
         Strategy:
-        1. Detect the image that needs rotation
-        2. Analyze image orientation using edge detection
-        3. Calculate required rotation angle
-        4. Simulate rotation controls
+        1. Detect target rotation (finger direction)
+        2. Detect current animal rotation
+        3. Calculate required rotation
+        4. Click rotation buttons to align (tracking state after each click)
+        5. Submit
         
         Args:
             captcha_element: Selenium WebElement containing the CAPTCHA
@@ -553,9 +795,254 @@ class CVAttacker:
         Returns:
             True if solved successfully, False otherwise
         """
-        logger.info("Rotation puzzle solver not yet fully implemented")
-        # TODO: Implement rotation detection and solving
-        return False
+        try:
+            logger.info("Attempting to solve rotation puzzle...")
+            
+            # Reset behavior events for this puzzle
+            self.behavior_events = []
+            start_time = time.time()
+            last_event_time = start_time
+            last_position = (0, 0)
+            
+            # Wait for page to load
+            time.sleep(1)
+            
+            # Get the target rotation from the finger image's transform
+            try:
+                finger_img = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-target")
+                finger_style = finger_img.get_attribute("style")
+                # Extract rotation from style: "transform: translateX(-50%) rotate(90deg)"
+                match = re.search(r'rotate\((\d+)deg\)', finger_style)
+                if match:
+                    target_rotation = int(match.group(1))
+                else:
+                    logger.error("Could not extract target rotation")
+                    return False
+            except Exception as e:
+                logger.error(f"Error finding target rotation: {e}")
+                return False
+            
+            # Find rotation buttons first
+            try:
+                buttons = captcha_element.find_elements(By.CSS_SELECTOR, ".rotation-captcha-button")
+                if len(buttons) < 2:
+                    logger.error("Could not find rotation buttons")
+                    return False
+                # First button is left (←), second is right (→)
+                left_button = buttons[0]
+                right_button = buttons[1]
+            except Exception as e:
+                logger.error(f"Error finding rotation buttons: {e}")
+                return False
+            
+            # Get current animal rotation and track it
+            def get_current_rotation():
+                try:
+                    animal_img = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-animal")
+                    animal_style = animal_img.get_attribute("style")
+                    match = re.search(r'rotate\((\d+)deg\)', animal_style)
+                    if match:
+                        return int(match.group(1))
+                    return 0
+                except:
+                    return 0
+            
+            current_rotation = get_current_rotation()
+            logger.info(f"Target rotation: {target_rotation}°, Current: {current_rotation}°")
+            
+            # Calculate required rotation
+            diff = (target_rotation - current_rotation) % 360
+            if diff > 180:
+                diff = diff - 360
+            
+            logger.info(f"Rotation needed: {diff}°")
+            
+            # Rotate in steps of 15 degrees, tracking state after each click
+            max_attempts = 24  # Maximum rotations (360/15)
+            attempts = 0
+            
+            while attempts < max_attempts:
+                current_rotation = get_current_rotation()
+                remaining_diff = (target_rotation - current_rotation) % 360
+                if remaining_diff > 180:
+                    remaining_diff = remaining_diff - 360
+                
+                # Check if we're within tolerance (15 degrees)
+                if abs(remaining_diff) <= 15:
+                    logger.info(f"Rotation aligned! Current: {current_rotation}°, Target: {target_rotation}°")
+                    break
+                
+                # Determine which button to click
+                if remaining_diff > 0:
+                    button_to_click = right_button
+                    logger.info(f"Clicking right button (remaining: {remaining_diff}°)")
+                else:
+                    button_to_click = left_button
+                    logger.info(f"Clicking left button (remaining: {remaining_diff}°)")
+                
+                # Get button location for behavior tracking
+                button_location = button_to_click.location
+                button_size = button_to_click.size
+                button_x = button_location['x'] + button_size['width'] / 2
+                button_y = button_location['y'] + button_size['height'] / 2
+                
+                # Record mousedown event
+                if self.use_model_classification:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mousedown', button_x, button_y, time_since_start, 
+                                     time_since_last, last_position)
+                    last_position = (button_x, button_y)
+                    last_event_time = current_time
+                
+                # Click and wait for state update
+                button_to_click.click()
+                time.sleep(0.2)  # Wait for React state update
+                
+                # Record mouseup event
+                if self.use_model_classification:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mouseup', button_x, button_y, time_since_start, 
+                                     time_since_last, last_position)
+                    last_position = (button_x, button_y)
+                    last_event_time = current_time
+                
+                # Verify rotation changed
+                new_rotation = get_current_rotation()
+                if new_rotation == current_rotation:
+                    logger.warning(f"Rotation did not change after click (still {current_rotation}°)")
+                    time.sleep(0.3)  # Wait longer and try again
+                    new_rotation = get_current_rotation()
+                
+                logger.info(f"Rotation after click: {new_rotation}°")
+                attempts += 1
+            
+            # Final check
+            current_rotation = get_current_rotation()
+            final_diff = abs((target_rotation - current_rotation) % 360)
+            if final_diff > 180:
+                final_diff = 360 - final_diff
+            
+            logger.info(f"Final rotation: {current_rotation}°, Target: {target_rotation}°, Diff: {final_diff}°")
+            
+            # Click submit button
+            try:
+                submit_button = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-button-submit")
+                
+                # Record submit button click
+                submit_location = submit_button.location
+                submit_size = submit_button.size
+                submit_x = submit_location['x'] + submit_size['width'] / 2
+                submit_y = submit_location['y'] + submit_size['height'] / 2
+                
+                if self.use_model_classification:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mousedown', submit_x, submit_y, time_since_start, 
+                                     time_since_last, last_position)
+                    last_position = (submit_x, submit_y)
+                    last_event_time = current_time
+                
+                submit_button.click()
+                logger.info("Clicked submit button")
+                
+                if self.use_model_classification:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mouseup', submit_x, submit_y, time_since_start, 
+                                     time_since_last, last_position)
+                
+            except Exception as e:
+                logger.error(f"Error clicking submit: {e}")
+                return False
+            
+            # Wait and check for success message
+            time.sleep(1.5)
+            try:
+                message_element = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-message-success")
+                if message_element and ("✅" in message_element.text or "Passed" in message_element.text):
+                    logger.info("✓ Rotation puzzle solved successfully!")
+                    return True
+            except:
+                pass
+            
+            # Check if there's an error message
+            try:
+                error_element = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-message-error")
+                if error_element:
+                    logger.warning("Rotation puzzle failed - message indicates error")
+                    return False
+            except:
+                pass
+            
+            logger.warning("Could not verify rotation puzzle success")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error solving rotation puzzle: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def find_navigation_button(self, page_element=None) -> Optional:
+        """
+        Generic method to find navigation buttons (Next, Skip, Continue, etc.)
+        
+        Args:
+            page_element: Optional WebElement to search within (defaults to entire page)
+            
+        Returns:
+            WebElement of navigation button, or None if not found
+        """
+        if page_element is None:
+            page_element = self.driver
+        
+        # Common button text patterns
+        navigation_texts = [
+            "next", "Next", "NEXT", "→", "Continue", "continue", "CONTINUE",
+            "Skip", "skip", "SKIP", "Proceed", "proceed", "PROCEED",
+            "Go to next", "Go to Next", "Next →"
+        ]
+        
+        # Try to find by text content
+        for text in navigation_texts:
+            try:
+                # Try XPath with text content
+                button = page_element.find_element(By.XPATH, f"//button[contains(text(), '{text}')]")
+                if button and button.is_displayed():
+                    logger.info(f"Found navigation button with text: '{text}'")
+                    return button
+            except:
+                continue
+        
+        # Try to find by common class names or IDs
+        common_selectors = [
+            "button[class*='next']",
+            "button[class*='Next']",
+            "button[id*='next']",
+            "button[id*='Next']",
+            "a[class*='next']",
+            ".next-button",
+            "#next-button"
+        ]
+        
+        for selector in common_selectors:
+            try:
+                buttons = page_element.find_elements(By.CSS_SELECTOR, selector)
+                for button in buttons:
+                    if button.is_displayed() and button.is_enabled():
+                        logger.info(f"Found navigation button with selector: '{selector}'")
+                        return button
+            except:
+                continue
+        
+        logger.warning("Could not find navigation button")
+        return None
     
     def solve_piece_placement(self, captcha_element) -> bool:
         """
@@ -579,7 +1066,7 @@ class CVAttacker:
     
     def attack_captcha(self, url: str, captcha_selector: str = ".custom-slider-captcha") -> Dict:
         """
-        Main attack method - attempts to solve a CAPTCHA on a webpage
+        Main attack method - attempts to solve multiple CAPTCHAs on a webpage
         Also classifies the attack behavior using the ML model
         
         Args:
@@ -594,7 +1081,9 @@ class CVAttacker:
             'puzzle_type': None,
             'attempts': 0,
             'error': None,
-            'model_classification': None
+            'model_classification': None,
+            'slider_result': None,
+            'rotation_result': None
         }
         
         try:
@@ -602,56 +1091,128 @@ class CVAttacker:
             self.driver.get(url)
             time.sleep(self.wait_time)
             
-            # Find CAPTCHA element
-            captcha_element = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, captcha_selector))
-            )
+            # ===== SOLVE SLIDER PUZZLE =====
+            logger.info("\n" + "="*60)
+            logger.info("ATTACKING SLIDER PUZZLE")
+            logger.info("="*60)
             
-            # Take initial screenshot to detect puzzle type
-            screenshot = self.take_screenshot(captcha_element)
-            puzzle_type = self.detect_puzzle_type(screenshot)
-            result['puzzle_type'] = puzzle_type.value
+            slider_success = False
+            slider_classification = None
             
-            # Solve based on puzzle type
-            if puzzle_type == PuzzleType.SLIDER_PUZZLE:
-                result['success'] = self.solve_slider_puzzle(captcha_element)
-            elif puzzle_type == PuzzleType.ROTATION_PUZZLE:
-                result['success'] = self.solve_rotation_puzzle(captcha_element)
-            elif puzzle_type == PuzzleType.PIECE_PLACEMENT:
-                result['success'] = self.solve_piece_placement(captcha_element)
-            else:
-                # Try slider puzzle as default
-                result['success'] = self.solve_slider_puzzle(captcha_element)
+            try:
+                # Find slider CAPTCHA element
+                slider_element = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, captcha_selector))
+                )
+                
+                # Take initial screenshot to detect puzzle type
+                screenshot = self.take_screenshot(slider_element)
+                puzzle_type = self.detect_puzzle_type(screenshot)
+                result['puzzle_type'] = puzzle_type.value
+                
+                # Solve slider puzzle
+                slider_success = self.solve_slider_puzzle(slider_element)
+                result['slider_result'] = {'success': slider_success}
+                
+                # Classify slider behavior
+                if self.use_model_classification:
+                    slider_classification = self.classify_behavior()
+                    result['slider_result']['model_classification'] = slider_classification
+                    if slider_classification:
+                        logger.info(f"\nSLIDER - ML Classification: {slider_classification['decision']} "
+                                  f"(probability: {slider_classification['prob_human']:.3f})")
+                
+                # Wait for slider to complete and success message to appear
+                time.sleep(2)
+                
+                # Wait for success message/verification indicator
+                try:
+                    WebDriverWait(self.driver, 5).until(
+                        EC.any_of(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, ".slider-track.verified")),
+                            EC.presence_of_element_located((By.CSS_SELECTOR, ".success-message")),
+                            EC.presence_of_element_located((By.CSS_SELECTOR, ".status-verified"))
+                        )
+                    )
+                    logger.info("Slider puzzle verification confirmed")
+                except:
+                    logger.warning("Could not confirm slider puzzle verification")
+                
+            except Exception as e:
+                logger.error(f"Error solving slider puzzle: {e}")
+                result['slider_result'] = {'success': False, 'error': str(e)}
+            
+            # ===== NAVIGATE TO ROTATION PUZZLE =====
+            logger.info("\n" + "="*60)
+            logger.info("NAVIGATING TO ROTATION PUZZLE")
+            logger.info("="*60)
+            
+            rotation_success = False
+            rotation_classification = None
+            
+            try:
+                # Generic navigation: Look for Next/Skip/Continue button
+                logger.info("Looking for navigation button...")
+                time.sleep(1)  # Give page time to update
+                
+                nav_button = self.find_navigation_button()
+                
+                if nav_button:
+                    logger.info("Found navigation button, clicking...")
+                    nav_button.click()
+                    time.sleep(self.wait_time)
+                    logger.info("Navigation button clicked")
+                else:
+                    # Fallback: Try direct URL navigation if button not found
+                    logger.warning("Navigation button not found, trying direct URL navigation")
+                    rotation_url = url.rstrip('/') + '/rotation-captcha'
+                    logger.info(f"Navigating to: {rotation_url}")
+                    self.driver.get(rotation_url)
+                    time.sleep(self.wait_time)
+                
+                # Reset behavior events for rotation puzzle
+                self.behavior_events = []
+                
+                # Find rotation CAPTCHA element
+                rotation_element = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".rotation-captcha-container"))
+                )
+                
+                # Solve rotation puzzle
+                rotation_success = self.solve_rotation_puzzle(rotation_element)
+                result['rotation_result'] = {'success': rotation_success}
+                
+                # Classify rotation behavior
+                if self.use_model_classification:
+                    rotation_classification = self.classify_behavior()
+                    result['rotation_result']['model_classification'] = rotation_classification
+                    if rotation_classification:
+                        logger.info(f"\nROTATION - ML Classification: {rotation_classification['decision']} "
+                                  f"(probability: {rotation_classification['prob_human']:.3f})")
+                
+                # Overall success if both solved
+                result['success'] = slider_success and rotation_success
+                
+                # Overall model classification (use the most recent, or combine if needed)
+                if self.use_model_classification:
+                    if rotation_classification:
+                        result['model_classification'] = rotation_classification
+                    elif slider_classification:
+                        result['model_classification'] = slider_classification
+                
+            except Exception as e:
+                logger.error(f"Error solving rotation puzzle: {e}")
+                result['rotation_result'] = {'success': False, 'error': str(e)}
+                import traceback
+                traceback.print_exc()
             
             result['attempts'] = 1
-            
-            # Check if verification was successful
-            time.sleep(1)
-            try:
-                verified_element = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track.verified")
-                if verified_element:
-                    result['success'] = True
-                    logger.info("CAPTCHA solved successfully!")
-            except:
-                pass
-            
-            # Classify behavior using ML model
-            if self.use_model_classification:
-                classification = self.classify_behavior()
-                result['model_classification'] = classification
-                
-                if classification:
-                    logger.info(f"ML Model Classification: {classification['decision']} "
-                              f"(probability: {classification['prob_human']:.3f})")
-                    # The CAPTCHA system would reject if classified as bot
-                    if not classification['is_human']:
-                        logger.warning("⚠️  Attack behavior classified as BOT by ML model!")
-                    else:
-                        logger.info("✓ Attack behavior classified as HUMAN by ML model")
             
         except Exception as e:
             logger.error(f"Error during attack: {e}")
             result['error'] = str(e)
+            import traceback
+            traceback.print_exc()
         
         return result
     
@@ -674,21 +1235,39 @@ def main():
         print("\n" + "="*60)
         print("ATTACK RESULTS")
         print("="*60)
-        print(f"CAPTCHA Solved: {'✓ YES' if result['success'] else '✗ NO'}")
+        print(f"Overall Success: {'✓ YES' if result['success'] else '✗ NO'}")
         print(f"Puzzle Type: {result['puzzle_type']}")
         print(f"Attempts: {result['attempts']}")
         
-        if result['model_classification']:
+        if result.get('slider_result'):
+            print("\n" + "-"*60)
+            print("SLIDER PUZZLE RESULTS")
+            print("-"*60)
+            print(f"Solved: {'✓ YES' if result['slider_result']['success'] else '✗ NO'}")
+            if result['slider_result'].get('model_classification'):
+                sc = result['slider_result']['model_classification']
+                print(f"ML: {sc['decision'].upper()} (prob: {sc['prob_human']:.3f})")
+        
+        if result.get('rotation_result'):
+            print("\n" + "-"*60)
+            print("ROTATION PUZZLE RESULTS")
+            print("-"*60)
+            print(f"Solved: {'✓ YES' if result['rotation_result']['success'] else '✗ NO'}")
+            if result['rotation_result'].get('model_classification'):
+                rc = result['rotation_result']['model_classification']
+                print(f"ML: {rc['decision'].upper()} (prob: {rc['prob_human']:.3f})")
+        
+        if result.get('model_classification'):
             classification = result['model_classification']
             print("\n" + "-"*60)
-            print("ML MODEL CLASSIFICATION")
+            print("OVERALL ML MODEL CLASSIFICATION")
             print("-"*60)
             print(f"Decision: {classification['decision'].upper()}")
             print(f"Human Probability: {classification['prob_human']:.3f}")
             print(f"Events Captured: {classification['num_events']}")
             print(f"Would be accepted: {'✓ YES' if classification['is_human'] else '✗ NO (BOT DETECTED)'}")
         
-        if result['error']:
+        if result.get('error'):
             print(f"\nError: {result['error']}")
         print("="*60)
         
