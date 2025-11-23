@@ -138,22 +138,19 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
     if (isCorrect) {
       setIsVerified(true);
       setIsFailed(false);
-      
+
       console.log('Captcha solved! Behavior data saved to server.');
       console.log('Stats:', stats);
-      
-      onVerify({ 
-        success: true, 
-        position: sliderPosition, 
+
+      onVerify({
+        success: true,
+        position: sliderPosition,
         target: puzzlePosition,
         behaviorStats: stats,
         eventCount: events.length
       });
-      
-      // Auto-reset after 1.5 seconds
-      setTimeout(() => {
-        handleReset();
-      }, 1500);
+
+      // Don't auto-reset on success - keep it verified
     } else {
       setIsFailed(true);
       
@@ -270,7 +267,7 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
           {isVerified ? '✓' : isFailed ? '✗' : '→'}
         </div>
         <div className="slider-text">
-          {isVerified ? 'Auto-resetting...' : isFailed ? 'Try again...' : 'Slide to verify'}
+          {isVerified ? '' : isFailed ? 'Try again...' : 'Slide to verify'}
         </div>
       </div>
     </div>

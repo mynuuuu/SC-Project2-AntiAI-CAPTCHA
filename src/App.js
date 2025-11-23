@@ -1,7 +1,8 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import SliderCaptchaPage from './SliderCaptchaPage';
-import RotationCaptchaPage from './RotationCaptchaPage';
+import AnimalRotationPage from './AnimalRotationPage';
+import AnimalSelectionPage from './AnimalSelectionPage';
 import './App.css';
 
 function App() {
@@ -9,7 +10,8 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<SliderCaptchaPage />} />
-        <Route path="/rotation-captcha" element={<RotationCaptchaPage />} />
+        <Route path="/rotation-captcha" element={<AnimalRotationPage />} />
+        <Route path="/animal-selection" element={<AnimalSelectionPage />} />
       </Routes>
     </Router>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CustomSliderCaptcha from './CustomSliderCaptcha';
 import './App.css';
@@ -17,24 +17,46 @@ function SliderCaptchaPage() {
     captcha3: 0,
   });
 
-  // Different background images for each captcha
-  const captchaImages = [
-    {
-      id: 'captcha1',
-      title: 'Captcha 1',
-      bgUrl: 'https://picsum.photos/seed/mountain1/400/200',
-    },
-    {
-      id: 'captcha2',
-      title: 'Captcha 2',
-      bgUrl: 'https://picsum.photos/seed/nature2/400/200',
-    },
-    {
-      id: 'captcha3',
-      title: 'Captcha 3',
-      bgUrl: 'https://picsum.photos/seed/landscape3/400/200',
-    }
-  ];
+  // Pool of available images
+  const imagePool = useMemo(() => [
+    'https://picsum.photos/seed/mountain1/400/200',
+    'https://picsum.photos/seed/nature2/400/200',
+    'https://picsum.photos/seed/landscape3/400/200',
+    'https://picsum.photos/seed/beach4/400/200',
+    'https://picsum.photos/seed/forest5/400/200',
+    'https://picsum.photos/seed/city6/400/200',
+    'https://picsum.photos/seed/sunset7/400/200',
+    'https://picsum.photos/seed/ocean8/400/200',
+    'https://picsum.photos/seed/desert9/400/200',
+    'https://picsum.photos/seed/lake10/400/200',
+  ], []);
+
+  // Randomly select 3 images from the pool (only once on component mount)
+  const captchaImages = useMemo(() => {
+    // Shuffle the image pool
+    const shuffled = [...imagePool].sort(() => Math.random() - 0.5);
+
+    // Select the first 3 images
+    const selectedImages = shuffled.slice(0, 3);
+
+    return [
+      {
+        id: 'captcha1',
+        title: 'Captcha 1',
+        bgUrl: selectedImages[0],
+      },
+      {
+        id: 'captcha2',
+        title: 'Captcha 2',
+        bgUrl: selectedImages[1],
+      },
+      {
+        id: 'captcha3',
+        title: 'Captcha 3',
+        bgUrl: selectedImages[2],
+      }
+    ];
+  }, [imagePool]);
 
   const handleVerify = (captchaId, data) => {
     console.log(`${captchaId} verification data:`, data);
@@ -45,8 +67,11 @@ function SliderCaptchaPage() {
   };
 
   const resetCaptcha = (captchaId) => {
-    setCaptchaStatus(prev => ({ ...prev, [captchaId]: false }));
-    setResetKeys(prev => ({ ...prev, [captchaId]: prev[captchaId] + 1 }));
+    // Only reset if not verified
+    if (!captchaStatus[captchaId]) {
+      setCaptchaStatus(prev => ({ ...prev, [captchaId]: false }));
+      setResetKeys(prev => ({ ...prev, [captchaId]: prev[captchaId] + 1 }));
+    }
   };
 
   const allCaptchasVerified = Object.values(captchaStatus).every(status => status === true);

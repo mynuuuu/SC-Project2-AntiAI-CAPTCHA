@@ -4,7 +4,8 @@ import numpy as np
 import joblib
 from pathlib import Path
 
-BASE = Path(__file__).resolve().parent
+# Models are in the root models/ folder, not scripts/models/
+BASE = Path(__file__).resolve().parent.parent  # Go up from scripts/ to project root
 rf_path = BASE / "models" / "rf_model.pkl"
 gb_path = BASE / "models" / "gb_model.pkl"
 

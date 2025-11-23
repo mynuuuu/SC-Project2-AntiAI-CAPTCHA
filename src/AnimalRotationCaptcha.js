@@ -15,7 +15,7 @@ const getRandomDirection = () => {
   return directionsArr[Math.floor(Math.random() * directionsArr.length)];
 };
 
-function AnimalRotationCaptcha() {
+function AnimalRotationCaptcha({ onSuccess }) {
   const [animalRotation, setAnimalRotation] = useState(getRandomDirection());
   const [targetRotation] = useState(getRandomDirection());
   const [message, setMessage] = useState('');
@@ -29,6 +29,9 @@ function AnimalRotationCaptcha() {
     const diff = Math.abs(animalRotation - targetRotation);
     if (diff <= TOLERANCE || diff >= 360 - TOLERANCE) {
       setMessage('✅ Captcha Passed!');
+      if (onSuccess) {
+        onSuccess();
+      }
     } else {
       setMessage('❌ Try Again!');
     }

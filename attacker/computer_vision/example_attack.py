@@ -16,7 +16,7 @@ def attack_single_captcha(url: str, headless: bool = False):
         url: URL of the page containing the CAPTCHA
         headless: Run browser in headless mode
     """
-    attacker = CVAttacker(headless=headless)
+    attacker = CVAttacker(headless=headless, use_model_classification=True)
     
     try:
         print(f"\n{'='*60}")
@@ -30,12 +30,51 @@ def attack_single_captcha(url: str, headless: bool = False):
         print("\n" + "="*60)
         print("ATTACK RESULTS")
         print("="*60)
-        print(f"Success: {'✓ YES' if result['success'] else '✗ NO'}")
+        print(f"Overall Success: {'✓ YES' if result['success'] else '✗ NO'}")
         print(f"Puzzle Type: {result['puzzle_type']}")
         print(f"Attempts: {result['attempts']}")
         print(f"Time Elapsed: {elapsed_time:.2f} seconds")
-        if result['error']:
-            print(f"Error: {result['error']}")
+        
+        if result.get('slider_result'):
+            print("\n" + "-"*60)
+            print("SLIDER PUZZLE RESULTS")
+            print("-"*60)
+            print(f"Solved: {'✓ YES' if result['slider_result']['success'] else '✗ NO'}")
+            if result['slider_result'].get('model_classification'):
+                sc = result['slider_result']['model_classification']
+                print(f"ML Classification: {sc['decision'].upper()}")
+                print(f"Human Probability: {sc['prob_human']:.3f}")
+                print(f"Events Captured: {sc['num_events']}")
+                print(f"Would be accepted: {'✓ YES' if sc['is_human'] else '✗ NO (BOT DETECTED)'}")
+            if result['slider_result'].get('error'):
+                print(f"Error: {result['slider_result']['error']}")
+        
+        if result.get('rotation_result'):
+            print("\n" + "-"*60)
+            print("ROTATION PUZZLE RESULTS")
+            print("-"*60)
+            print(f"Solved: {'✓ YES' if result['rotation_result']['success'] else '✗ NO'}")
+            if result['rotation_result'].get('model_classification'):
+                rc = result['rotation_result']['model_classification']
+                print(f"ML Classification: {rc['decision'].upper()}")
+                print(f"Human Probability: {rc['prob_human']:.3f}")
+                print(f"Events Captured: {rc['num_events']}")
+                print(f"Would be accepted: {'✓ YES' if rc['is_human'] else '✗ NO (BOT DETECTED)'}")
+            if result['rotation_result'].get('error'):
+                print(f"Error: {result['rotation_result']['error']}")
+        
+        if result.get('model_classification'):
+            classification = result['model_classification']
+            print("\n" + "-"*60)
+            print("OVERALL ML MODEL CLASSIFICATION")
+            print("-"*60)
+            print(f"Decision: {classification['decision'].upper()}")
+            print(f"Human Probability: {classification['prob_human']:.3f}")
+            print(f"Events Captured: {classification['num_events']}")
+            print(f"Would be accepted: {'✓ YES' if classification['is_human'] else '✗ NO (BOT DETECTED)'}")
+        
+        if result.get('error'):
+            print(f"\nError: {result['error']}")
         print("="*60 + "\n")
         
         return result['success']
@@ -67,7 +106,7 @@ def attack_multiple_captchas(url: str, num_attempts: int = 5, headless: bool = F
         print(f"\nAttempt {i+1}/{num_attempts}")
         print("-" * 60)
         
-        attacker = CVAttacker(headless=headless)
+        attacker = CVAttacker(headless=headless, use_model_classification=True)
         
         try:
             start_time = time.time()
