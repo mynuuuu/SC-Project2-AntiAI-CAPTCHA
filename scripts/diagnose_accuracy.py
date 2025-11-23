@@ -19,7 +19,7 @@ data_dir = BASE / "data"
 # Load the data
 print("\n1. LOADING DATA...")
 try:
-    human_files = ["captcha1.csv", "captcha2.csv", "captcha3.csv"]
+    human_files = ["captcha1.csv"]
     human_dfs = []
     
     for f in human_files:

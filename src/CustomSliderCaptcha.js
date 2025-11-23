@@ -131,6 +131,20 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
     
     if (result.success) {
       console.log(`✓ Data saved to ${captchaId}.csv`);
+      if (result.prediction) {
+        const emoji = result.prediction === 'human' ? '✅' : '🤖';
+        const conf = (result.confidence * 100).toFixed(1);
+        
+        // Show in console
+        console.log(`${emoji} ${result.prediction.toUpperCase()} - ${conf}% confident`);
+        
+        // Show alert to user
+        alert(
+          `${emoji} ${result.prediction === 'human' ? 'HUMAN VERIFIED' : 'BOT DETECTED'}\n\n` +
+          `Confidence: ${conf}%\n` +
+          `${result.explanation}`
+        );
+      }
     } else {
       console.error('Failed to save data to server:', result.error);
     }

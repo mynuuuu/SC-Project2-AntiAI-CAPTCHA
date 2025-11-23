@@ -19,7 +19,7 @@ print("=" * 60)
 data_dir = BASE / "data"
 
 # Read the three captcha files
-capt_files = ["captcha1.csv", "captcha2.csv", "captcha3.csv"]
+capt_files = ["captcha1.csv"]
 capt_dataframes = []
 
 for filename in capt_files:
