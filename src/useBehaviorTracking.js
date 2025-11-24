@@ -188,7 +188,7 @@ const useBehaviorTracking = () => {
   }, [sessionId, convertToCSV, downloadCSV]);
 
   // Send data to server (for captcha-specific files)
-  const sendToServer = useCallback(async (serverUrl, userType = 'human', captchaId = 'captcha1', success = false) => {
+  const sendToServer = useCallback(async (serverUrl, captchaType, userType = 'human', captchaId = 'captcha1', success = false) => {
     if (eventsRef.current.length === 0) {
       console.warn('No events to send!');
       return { success: false, error: 'No events' };
@@ -203,6 +203,7 @@ const useBehaviorTracking = () => {
         body: JSON.stringify({
           captcha_id: captchaId,
           session_id: sessionId,
+          captchaType: captchaType,
           events: eventsRef.current,
           metadata: {
             user_agent: navigator.userAgent,

@@ -18,8 +18,8 @@ print("=" * 60)
 
 data_dir = BASE / "data"
 
-# Read the three captcha files
-capt_files = ["captcha1.csv", "captcha2.csv", "captcha3.csv"]
+# Read the two captcha files
+capt_files = ["captcha1.csv", "rotation1.csv"]
 capt_dataframes = []
 
 for filename in capt_files:
@@ -165,7 +165,7 @@ use_stratify = len(classes) == 2 and np.min(counts) >= 2
 
 if not use_stratify:
     warnings.warn(
-        "⚠️  Stratified split disabled (one class has < 2 samples). "
+        "Stratified split disabled (one class has < 2 samples). "
         "Results will NOT be reliable until you collect more human sessions."
     )
 
@@ -200,11 +200,11 @@ gb = GradientBoostingClassifier(
     random_state=42
 )
 
-print("\n🌲 Training Random Forest...")
+print("\nTraining Random Forest...")
 rf.fit(X_train, y_train)
 print("✓ Random Forest trained")
 
-print("\n📈 Training Gradient Boosting...")
+print("\nTraining Gradient Boosting...")
 gb.fit(X_train, y_train)
 print("✓ Gradient Boosting trained")
 
@@ -226,7 +226,7 @@ if len(np.unique(y_test)) == 2:
     print(f"GB AUC: {roc_auc_score(y_test, gb_proba):.4f}")
     print(f"Ensemble AUC: {roc_auc_score(y_test, final_proba):.4f}")
 else:
-    print("\n⚠️  Warning: only one class present in y_test, AUC not defined.")
+    print("\nWarning: only one class present in y_test, AUC not defined.")
 
 print("\n📊 Classification Report (Ensemble):")
 print(classification_report(y_test, final_pred, zero_division=0))

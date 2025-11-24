@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import './AnimalRotationCaptcha.css';
+import useBehaviorTracking from './useBehaviorTracking';
 
 const TOLERANCE = 15;
+const captchaType = "rotation";
+const captchaId = "rotation1";
 
 const directions = {
   UP: 0,
@@ -20,21 +23,60 @@ function AnimalRotationCaptcha({ onSuccess }) {
   const [targetRotation] = useState(getRandomDirection());
   const [message, setMessage] = useState('');
 
-  const rotateAnimal = (delta) => {
-    setAnimalRotation((prev) => (prev + delta + 360) % 360);
-    setMessage('');
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    captureEvent,
+    sendToServer,
+  } = useBehaviorTracking();
+
+  const handleRotate = (delta) => (e) => {
+    // start tracking on first interaction
+    if (!isRecording) {
+      startRecording();
+    }
+
+    // update rotation + log event with rich info
+    setAnimalRotation((prev) => {
+      const next = (prev + delta + 360) % 360;
+
+      captureEvent(
+        delta > 0 ? 'rotate_right' : 'rotate_left',
+        e,
+        e.currentTarget,
+        {
+          rotation_delta: delta,
+          rotation_angle: next,
+          target_angle: targetRotation,
+          captcha_id: captchaId,
+          captcha_type: captchaType,
+        }
+      );
+
+      setMessage('');
+      return next;
+    });
   };
 
-  const checkAlignment = () => {
+  const checkAlignment = async () => {
     const diff = Math.abs(animalRotation - targetRotation);
-    if (diff <= TOLERANCE || diff >= 360 - TOLERANCE) {
-      setMessage('✅ Captcha Passed!');
-      if (onSuccess) {
-        onSuccess();
-      }
-    } else {
-      setMessage('❌ Try Again!');
-    }
+    const passed = diff <= TOLERANCE || diff >= 360 - TOLERANCE;
+
+    setMessage(passed ? '✅ Captcha Passed!' : '❌ Try Again!');
+
+    // stop tracking and send behaviour to backend
+    stopRecording();
+
+    await sendToServer(
+      'http://localhost:5001/save_captcha_events',
+      captchaType,   // captchaType
+      'human',        // userType
+      captchaId,      // captcha_id
+      passed          // success (boolean)
+    );
+
+    return passed;
   };
 
   return (
@@ -64,13 +106,13 @@ function AnimalRotationCaptcha({ onSuccess }) {
       <div className="rotation-captcha-controls">
         <div className="rotation-captcha-buttons">
           <button
-            onClick={() => rotateAnimal(-15)}
+            onClick={handleRotate(-15)}
             className="rotation-captcha-button"
           >
             ←
           </button>
           <button
-            onClick={() => rotateAnimal(15)}
+            onClick={handleRotate(15)}
             className="rotation-captcha-button"
           >
             →
@@ -85,11 +127,14 @@ function AnimalRotationCaptcha({ onSuccess }) {
       </div>
 
       {message && (
-        <p className={`rotation-captcha-message ${
-          message.includes('✅')
-            ? 'rotation-captcha-message-success'
-            : 'rotation-captcha-message-error'
-        }`}>
+        <p
+          className={
+            'rotation-captcha-message ' +
+            (message.includes('✅')
+              ? 'rotation-captcha-message-success'
+              : 'rotation-captcha-message-error')
+          }
+        >
           {message}
         </p>
       )}

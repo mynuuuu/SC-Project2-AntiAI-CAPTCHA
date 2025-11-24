@@ -127,7 +127,7 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
 
     // Send data to server
     const serverUrl = 'http://localhost:5001/save_captcha_events';
-    const result = await sendToServer(serverUrl, 'human', captchaId, isCorrect);
+    const result = await sendToServer(serverUrl, 'slider', 'human', captchaId, "slider", isCorrect);
     
     if (result.success) {
       console.log(`✓ Data saved to ${captchaId}.csv`);

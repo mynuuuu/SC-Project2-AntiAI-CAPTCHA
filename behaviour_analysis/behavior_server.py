@@ -237,6 +237,7 @@ def save_captcha_events():
         
         captcha_id = data.get('captcha_id')
         session_id = data.get('session_id')
+        captcha_type = data.get('captchaType')
         events = data.get('events', [])
         metadata = data.get('metadata', {})
         success = data.get('success', False)
@@ -244,7 +245,7 @@ def save_captcha_events():
         if not captcha_id:
             return jsonify({'error': 'captcha_id is required'}), 400
         
-        if captcha_id not in ['captcha1', 'captcha2', 'captcha3']:
+        if captcha_id not in ['captcha1', 'captcha2', 'captcha3','rotation1']:
             return jsonify({'error': 'captcha_id must be captcha1, captcha2, or captcha3'}), 400
         
         if not session_id:
@@ -252,6 +253,12 @@ def save_captcha_events():
         
         if not events:
             return jsonify({'error': 'No events provided'}), 400
+        
+        if not captcha_type:
+            return jsonify({'error': 'captchaType is required'}), 400
+        
+        if captcha_type not in ['rotation','slider','temporal']:
+            return jsonify({'error': 'captchaType must be rotation, slider, or temporal'}), 400
         
         # Ensure data directory exists
         if not os.path.exists(DATA_DIR):
