@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import './AnimalRotationCaptcha.css';
 import useBehaviorTracking from './useBehaviorTracking';
+import { shouldCaptureBehavior } from './utils/behaviorMode';
 
 const TOLERANCE = 15;
-const captchaType = "rotation";
-const captchaId = "rotation1";
+const CAPTCHA_TYPE = 'rotation';
+const CAPTCHA_ID = 'captcha2';
 
 const directions = {
   UP: 0,
@@ -22,65 +23,137 @@ function AnimalRotationCaptcha({ onSuccess }) {
   const [animalRotation, setAnimalRotation] = useState(getRandomDirection());
   const [targetRotation] = useState(getRandomDirection());
   const [message, setMessage] = useState('');
+  const containerRef = useRef(null);
+  const shouldLogBehavior = shouldCaptureBehavior();
 
   const {
-    isRecording,
     startRecording,
     stopRecording,
     captureEvent,
     sendToServer,
+    getStats,
+    isRecording,
+    reset,
   } = useBehaviorTracking();
 
-  const handleRotate = (delta) => (e) => {
-    // start tracking on first interaction
+  const ensureRecording = () => {
     if (!isRecording) {
       startRecording();
     }
-
-    // update rotation + log event with rich info
-    setAnimalRotation((prev) => {
-      const next = (prev + delta + 360) % 360;
-
-      captureEvent(
-        delta > 0 ? 'rotate_right' : 'rotate_left',
-        e,
-        e.currentTarget,
-        {
-          rotation_delta: delta,
-          rotation_angle: next,
-          target_angle: targetRotation,
-          captcha_id: captchaId,
-          captcha_type: captchaType,
-        }
-      );
-
-      setMessage('');
-      return next;
-    });
   };
 
-  const checkAlignment = async () => {
+  const normalizeEvent = (event) => {
+    if (!event) return null;
+
+    if (event.touches && event.touches[0]) {
+      const touch = event.touches[0];
+      return {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        pageX: touch.pageX,
+        pageY: touch.pageY,
+        screenX: touch.screenX,
+        screenY: touch.screenY,
+        button: 0,
+        buttons: 1,
+      };
+    }
+
+    if (event.changedTouches && event.changedTouches[0]) {
+      const touch = event.changedTouches[0];
+      return {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        pageX: touch.pageX,
+        pageY: touch.pageY,
+        screenX: touch.screenX,
+        screenY: touch.screenY,
+        button: 0,
+        buttons: 0,
+      };
+    }
+
+    return event;
+  };
+
+  const recordEvent = (eventType, reactEvent, autoStart = true) => {
+    const nativeEvent = reactEvent?.nativeEvent || reactEvent;
+
+    if (autoStart) {
+      ensureRecording();
+    } else if (!isRecording) {
+      return;
+    }
+
+    const normalizedEvent = normalizeEvent(nativeEvent);
+    if (normalizedEvent) {
+      captureEvent(eventType, normalizedEvent, containerRef.current);
+    }
+  };
+
+  const rotateAnimal = (delta, event) => {
+    if (event?.preventDefault) {
+      event.preventDefault();
+    }
+
+    recordEvent(delta > 0 ? 'rotate_right' : 'rotate_left', event);
+    setAnimalRotation((prev) => (prev + delta + 360) % 360);
+    setMessage('');
+  };
+
+  const handleMouseMove = (event) => {
+    recordEvent('mousemove', event, false);
+  };
+
+  const checkAlignment = async (event) => {
+    if (event) {
+      recordEvent('submit_click', event);
+    }
+
     const diff = Math.abs(animalRotation - targetRotation);
-    const passed = diff <= TOLERANCE || diff >= 360 - TOLERANCE;
+    const isSuccess = diff <= TOLERANCE || diff >= 360 - TOLERANCE;
+    setMessage(isSuccess ? '✅ Captcha Passed!' : '❌ Try Again!');
 
-    setMessage(passed ? '✅ Captcha Passed!' : '❌ Try Again!');
+    let events = [];
+    if (isRecording) {
+      events = stopRecording();
+    }
+    const stats = getStats();
 
-    // stop tracking and send behaviour to backend
-    stopRecording();
+    if (shouldLogBehavior && events.length > 0) {
+      const serverUrl = 'http://localhost:5001/save_captcha_events';
+      const result = await sendToServer(
+        serverUrl,
+        CAPTCHA_TYPE,
+        'human',
+        CAPTCHA_ID,
+        isSuccess
+      );
+      if (result.success) {
+        console.log('✓ Data saved to captcha2.csv');
+      } else {
+        console.error('Failed to save rotation captcha data:', result.error);
+      }
+    } else if (!shouldLogBehavior) {
+      console.log('Behavior logging skipped for rotation captcha (human-only mode).');
+    } else {
+      console.warn('No rotation behavior events captured; skipping server upload.');
+    }
 
-    await sendToServer(
-      'http://localhost:5001/save_captcha_events',
-      captchaType,   // captchaType
-      'human',        // userType
-      captchaId,      // captcha_id
-      passed          // success (boolean)
-    );
+    if (isSuccess && typeof onSuccess === 'function') {
+      onSuccess(stats);
+    }
 
-    return passed;
+    reset();
   };
 
   return (
-    <div className="rotation-captcha-container">
+    <div
+      className="rotation-captcha-container"
+      ref={containerRef}
+      onMouseMove={handleMouseMove}
+      onTouchMove={(event) => recordEvent('touchmove', event, false)}
+    >
       <h2 className="rotation-captcha-title">
         Rotate the animal to face the finger
       </h2>
@@ -106,19 +179,23 @@ function AnimalRotationCaptcha({ onSuccess }) {
       <div className="rotation-captcha-controls">
         <div className="rotation-captcha-buttons">
           <button
-            onClick={handleRotate(-15)}
+            onMouseDown={(event) => rotateAnimal(-15, event)}
+            onTouchStart={(event) => rotateAnimal(-15, event)}
             className="rotation-captcha-button"
           >
             ←
           </button>
           <button
-            onClick={handleRotate(15)}
+            onMouseDown={(event) => rotateAnimal(15, event)}
+            onTouchStart={(event) => rotateAnimal(15, event)}
             className="rotation-captcha-button"
           >
             →
           </button>
         </div>
         <button
+          onMouseDown={(event) => recordEvent('submit_button_mousedown', event)}
+          onTouchStart={(event) => recordEvent('submit_button_touchstart', event)}
           onClick={checkAlignment}
           className="rotation-captcha-button-submit"
         >

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import './CustomSliderCaptcha.css';
 import useBehaviorTracking from './useBehaviorTracking';
+import { shouldCaptureBehavior } from './utils/behaviorMode';
 
 const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
   const [sliderPosition, setSliderPosition] = useState(0);
@@ -19,11 +20,12 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
     startRecording,
     stopRecording,
     captureEvent,
-    saveToCSV,
     sendToServer,
     getStats,
     isRecording,
   } = useBehaviorTracking();
+  const shouldLogBehavior = shouldCaptureBehavior();
+  const resolvedCaptchaId = captchaId || 'captcha1';
 
   // Generate random puzzle position when component mounts or image changes
   useEffect(() => {
@@ -127,12 +129,24 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
 
     // Send data to server
     const serverUrl = 'http://localhost:5001/save_captcha_events';
-    const result = await sendToServer(serverUrl, 'slider', 'human', captchaId, "slider", isCorrect);
-    
-    if (result.success) {
-      console.log(`✓ Data saved to ${captchaId}.csv`);
+    if (shouldLogBehavior && events.length > 0) {
+      const result = await sendToServer(
+        serverUrl,
+        'slider',
+        'human',
+        resolvedCaptchaId,
+        isCorrect
+      );
+
+      if (result.success) {
+        console.log(`✓ Data saved to ${resolvedCaptchaId}.csv`);
+      } else {
+        console.error('Failed to save data to server:', result.error);
+      }
+    } else if (!shouldLogBehavior) {
+      console.log('Behavior logging skipped (not running via npm start).');
     } else {
-      console.error('Failed to save data to server:', result.error);
+      console.warn('No behavior events captured; skipping server upload.');
     }
 
     if (isCorrect) {
@@ -153,18 +167,18 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
       // Don't auto-reset on success - keep it verified
     } else {
       setIsFailed(true);
-      
+
       console.log('Captcha failed. Behavior data saved to server.');
       console.log('Stats:', stats);
-      
-      onVerify({ 
-        success: false, 
-        position: sliderPosition, 
+
+      onVerify({
+        success: false,
+        position: sliderPosition,
         target: puzzlePosition,
         behaviorStats: stats,
         eventCount: events.length
       });
-      
+
       // Auto-reset after 1 second
       setTimeout(() => {
         setSliderPosition(0);

@@ -29,6 +29,7 @@ from enum import Enum
 import pandas as pd
 import sys
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 # Add scripts directory to path to import ml_core
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -185,6 +186,20 @@ class CVAttacker:
         
         logger.warning("Could not determine puzzle type, defaulting to SLIDER_PUZZLE")
         return PuzzleType.SLIDER_PUZZLE
+
+    def _with_attack_mode(self, url: str) -> str:
+        """
+        Append an attackMode flag to the URL so the frontend can skip logging our behavior.
+        """
+        try:
+            parsed = urlparse(url)
+            query = parse_qs(parsed.query)
+            query['attackMode'] = ['1']
+            new_query = urlencode(query, doseq=True)
+            return urlunparse(parsed._replace(query=new_query))
+        except Exception as error:
+            logger.warning(f"Unable to append attackMode param to URL '{url}': {error}")
+            return url
     
     def solve_slider_puzzle(self, captcha_element) -> bool:
         """
@@ -1087,8 +1102,9 @@ class CVAttacker:
         }
         
         try:
-            logger.info(f"Navigating to {url}")
-            self.driver.get(url)
+            attack_url = self._with_attack_mode(url)
+            logger.info(f"Navigating to {attack_url}")
+            self.driver.get(attack_url)
             time.sleep(self.wait_time)
             
             # ===== SOLVE SLIDER PUZZLE =====
@@ -1166,6 +1182,7 @@ class CVAttacker:
                     # Fallback: Try direct URL navigation if button not found
                     logger.warning("Navigation button not found, trying direct URL navigation")
                     rotation_url = url.rstrip('/') + '/rotation-captcha'
+                    rotation_url = self._with_attack_mode(rotation_url)
                     logger.info(f"Navigating to: {rotation_url}")
                     self.driver.get(rotation_url)
                     time.sleep(self.wait_time)
