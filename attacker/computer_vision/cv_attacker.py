@@ -30,10 +30,13 @@ import pandas as pd
 import sys
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+import uuid
+import json
 
 # Add scripts directory to path to import ml_core
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SCRIPTS_DIR = BASE_DIR / "scripts"
+DATA_DIR = BASE_DIR / "data"  # Data directory for saving bot behavior
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 try:
@@ -70,7 +73,7 @@ class CVAttacker:
     
     def __init__(self, headless: bool = False, wait_time: int = 3, 
                  chromedriver_path: Optional[str] = None, browser_binary: Optional[str] = None,
-                 use_model_classification: bool = True):
+                 use_model_classification: bool = True, save_behavior_data: bool = True):
         """
         Initialize the CV attacker
         
@@ -80,13 +83,22 @@ class CVAttacker:
             chromedriver_path: Optional path to ChromeDriver executable
             browser_binary: Optional path to browser binary (e.g., '/Applications/Arc.app/Contents/MacOS/Arc')
             use_model_classification: Whether to use ML model to classify attack behavior
+            save_behavior_data: Whether to save bot behavior data to CSV files
         """
         self.wait_time = wait_time
         self.driver = None
         self.headless = headless
         self.use_model_classification = use_model_classification and MODEL_AVAILABLE
+        self.save_behavior_data = save_behavior_data
         self.behavior_events = []  # Store mouse events for model classification
         self.detected_sliding_animal = None  # Store detected sliding animal for third captcha
+        
+        # Session tracking for data saving
+        self.session_id = None
+        self.session_start_time = None
+        self.current_captcha_id = None
+        self.captcha_metadata = {}
+        
         self.setup_driver(chromedriver_path, browser_binary)
         
     def setup_driver(self, chromedriver_path: Optional[str] = None, browser_binary: Optional[str] = None):
@@ -793,6 +805,104 @@ class CVAttacker:
         except Exception as e:
             logger.error(f"Error classifying behavior: {e}")
             return None
+    
+    def save_behavior_to_csv(self, captcha_type: str, success: bool) -> None:
+        """
+        Save bot behavior data to CSV file
+        
+        Args:
+            captcha_type: Type of captcha ('captcha1', 'captcha2', 'captcha3')
+            success: Whether the captcha was solved successfully
+        """
+        if not self.save_behavior_data or not self.behavior_events:
+            return
+        
+        try:
+            # Determine output file based on captcha type
+            output_file = DATA_DIR / f"bot_{captcha_type}.csv"
+            
+            # Create DataFrame from behavior events
+            df = pd.DataFrame(self.behavior_events)
+            
+            if len(df) == 0:
+                logger.warning(f"No behavior events to save for {captcha_type}")
+                return
+            
+            # Add required columns to match human data format
+            df['session_id'] = self.session_id
+            df['timestamp'] = (self.session_start_time * 1000 + df['time_since_start']).astype(int)
+            df['relative_x'] = 0  # Not tracked by attacker
+            df['relative_y'] = 0  # Not tracked by attacker
+            df['page_x'] = df['client_x']
+            df['page_y'] = df['client_y']
+            df['screen_x'] = df['client_x']  # Approximate
+            df['screen_y'] = df['client_y']  # Approximate
+            df['button'] = 0
+            df['buttons'] = 0
+            df['ctrl_key'] = False
+            df['shift_key'] = False
+            df['alt_key'] = False
+            df['meta_key'] = False
+            df['acceleration'] = 0.0
+            df['direction'] = 0.0
+            df['user_agent'] = 'Bot/CVAttacker'
+            df['screen_width'] = 1920
+            df['screen_height'] = 1080
+            df['viewport_width'] = 1920
+            df['viewport_height'] = 1080
+            df['user_type'] = 'bot'
+            df['challenge_type'] = f"{captcha_type}_{'success' if success else 'failure'}"
+            df['captcha_id'] = captcha_type
+            
+            # Add metadata as JSON if available
+            if self.captcha_metadata:
+                df['metadata_json'] = json.dumps(self.captcha_metadata)
+            
+            # Reorder columns to match human data format
+            column_order = [
+                'session_id', 'timestamp', 'time_since_start', 'time_since_last_event',
+                'event_type', 'client_x', 'client_y', 'relative_x', 'relative_y',
+                'page_x', 'page_y', 'screen_x', 'screen_y', 'button', 'buttons',
+                'ctrl_key', 'shift_key', 'alt_key', 'meta_key', 'velocity',
+                'acceleration', 'direction', 'user_agent', 'screen_width', 'screen_height',
+                'viewport_width', 'viewport_height', 'user_type', 'challenge_type'
+            ]
+            
+            # Add optional columns if they exist
+            if 'captcha_id' in df.columns:
+                column_order.append('captcha_id')
+            if 'metadata_json' in df.columns:
+                column_order.append('metadata_json')
+            
+            # Reorder columns (only include columns that exist)
+            df = df[[col for col in column_order if col in df.columns]]
+            
+            # Check if file exists to determine if we need header
+            file_exists = output_file.exists()
+            
+            # Append to CSV or create new file
+            df.to_csv(output_file, mode='a', header=not file_exists, index=False)
+            
+            logger.info(f"✓ Saved {len(df)} bot behavior events to {output_file}")
+            logger.info(f"  Session ID: {self.session_id}")
+            logger.info(f"  Captcha: {captcha_type}, Success: {success}")
+            
+        except Exception as e:
+            logger.error(f"Error saving behavior data to CSV: {e}")
+    
+    def start_new_session(self, captcha_id: str) -> None:
+        """
+        Start a new session for behavior tracking
+        
+        Args:
+            captcha_id: ID of the captcha being solved
+        """
+        self.session_id = f"bot_session_{int(time.time() * 1000)}_{str(uuid.uuid4())[:8]}"
+        self.session_start_time = time.time()
+        self.current_captcha_id = captcha_id
+        self.behavior_events = []
+        self.captcha_metadata = {}
+        logger.info(f"📝 Started new session: {self.session_id} for {captcha_id}")
     
     def _detect_image_orientation(self, image: np.ndarray, is_pointing_object: bool = True) -> float:
         """
@@ -2243,6 +2353,9 @@ class CVAttacker:
             slider_classification = None
             
             try:
+                # Start new session for slider captcha
+                self.start_new_session('captcha1')
+                
                 # Find slider CAPTCHA element
                 slider_element = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, captcha_selector))
@@ -2256,6 +2369,10 @@ class CVAttacker:
                 # Solve slider puzzle
                 slider_success = self.solve_slider_puzzle(slider_element)
                 result['slider_result'] = {'success': slider_success}
+                
+                # Save bot behavior data to CSV
+                if self.save_behavior_data:
+                    self.save_behavior_to_csv('captcha1', slider_success)
                 
                 # Classify slider behavior
                 if self.use_model_classification:
@@ -2314,8 +2431,8 @@ class CVAttacker:
                     self.driver.get(rotation_url)
                     time.sleep(self.wait_time)
                 
-                # Reset behavior events for rotation puzzle
-                self.behavior_events = []
+                # Start new session for rotation puzzle
+                self.start_new_session('captcha2')
                 
                 # Find rotation CAPTCHA element (try both types)
                 try:
@@ -2345,6 +2462,10 @@ class CVAttacker:
                 # Solve rotation puzzle
                 rotation_success = self.solve_rotation_puzzle(rotation_element)
                 result['rotation_result'] = {'success': rotation_success}
+                
+                # Save bot behavior data to CSV
+                if self.save_behavior_data:
+                    self.save_behavior_to_csv('captcha2', rotation_success)
                 
                 # If rotation puzzle failed, try to skip
                 if not rotation_success:
@@ -2397,6 +2518,9 @@ class CVAttacker:
             third_captcha_success = False
             
             try:
+                # Start new session for third captcha
+                self.start_new_session('captcha3')
+                
                 # Wait a moment for any navigation to complete
                 time.sleep(3)
                 
@@ -2422,6 +2546,10 @@ class CVAttacker:
                         third_captcha_success = self.solve_third_captcha()
                         result['third_captcha_result'] = {'success': third_captcha_success, 'animal': self.detected_sliding_animal}
                         
+                        # Save bot behavior data to CSV
+                        if self.save_behavior_data:
+                            self.save_behavior_to_csv('captcha3', third_captcha_success)
+                        
                         if third_captcha_success:
                             logger.info("✓ Third captcha solved successfully!")
                         else:
@@ -2434,6 +2562,10 @@ class CVAttacker:
                         # Try to solve anyway in case page is already loaded
                         third_captcha_success = self.solve_third_captcha()
                         result['third_captcha_result'] = {'success': third_captcha_success, 'error': 'Page not confirmed', 'animal': self.detected_sliding_animal}
+                        
+                        # Save bot behavior data to CSV
+                        if self.save_behavior_data:
+                            self.save_behavior_to_csv('captcha3', third_captcha_success)
                 else:
                     logger.error("❌ No flying animal was detected, cannot solve third captcha")
                     logger.info("🔍 Checking if we're on the animal selection page anyway...")
@@ -2446,6 +2578,10 @@ class CVAttacker:
                             # List available options
                             third_captcha_success = self.solve_third_captcha()  # Will show options
                             result['third_captcha_result'] = {'success': False, 'error': 'No animal detected'}
+                            
+                            # Save bot behavior data to CSV
+                            if self.save_behavior_data:
+                                self.save_behavior_to_csv('captcha3', False)
                     except:
                         logger.info("❌ Not on animal selection page either")
                         result['third_captcha_result'] = {'success': False, 'error': 'No animal detected'}

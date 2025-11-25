@@ -11,12 +11,13 @@ from cv_attacker import CVAttacker, PuzzleType
 def attack_single_captcha(url: str, headless: bool = False):
     """
     Attack a single CAPTCHA on a webpage
+    Bot behavior data will be saved to bot_captcha1.csv, bot_captcha2.csv, bot_captcha3.csv
     
     Args:
         url: URL of the page containing the CAPTCHA
         headless: Run browser in headless mode
     """
-    attacker = CVAttacker(headless=headless, use_model_classification=True)
+    attacker = CVAttacker(headless=headless, use_model_classification=True, save_behavior_data=True)
     
     try:
         print(f"\n{'='*60}")
@@ -52,6 +53,7 @@ def attack_single_captcha(url: str, headless: bool = False):
 def attack_multiple_captchas(url: str, num_attempts: int = 5, headless: bool = False):
     """
     Attack multiple CAPTCHAs to test success rate
+    Bot behavior data will be saved to bot_captcha1.csv, bot_captcha2.csv, bot_captcha3.csv
     
     Args:
         url: URL of the page containing the CAPTCHA
@@ -60,6 +62,7 @@ def attack_multiple_captchas(url: str, num_attempts: int = 5, headless: bool = F
     """
     print(f"\n{'='*60}")
     print(f"Running {num_attempts} attack attempts")
+    print(f"Bot behavior will be saved to data/bot_captcha1.csv, bot_captcha2.csv, bot_captcha3.csv")
     print(f"{'='*60}\n")
     
     successes = 0
@@ -69,7 +72,7 @@ def attack_multiple_captchas(url: str, num_attempts: int = 5, headless: bool = F
         print(f"\nAttempt {i+1}/{num_attempts}")
         print("-" * 60)
         
-        attacker = CVAttacker(headless=headless, use_model_classification=True)
+        attacker = CVAttacker(headless=headless, use_model_classification=True, save_behavior_data=True)
         
         try:
             start_time = time.time()
