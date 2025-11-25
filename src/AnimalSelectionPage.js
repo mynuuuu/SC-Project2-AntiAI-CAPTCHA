@@ -31,6 +31,7 @@ function AnimalSelectionPage() {
         sessionId,
     } = useBehaviorTracking();
 
+    // Start recording on mount
     useEffect(() => {
         mountTimeRef.current = performance.now();
         if (shouldLogBehavior) {
@@ -39,13 +40,15 @@ function AnimalSelectionPage() {
         } else {
             console.log('Layer 3: Behavior logging is disabled');
         }
-        
-        // Track mouse movements for path analysis AND capture as events
+    }, [shouldLogBehavior, startRecording]);
+
+    // Track mouse movements
+    useEffect(() => {
         // Throttle to avoid too many events (capture every ~50ms for reasonable data size)
         let lastMouseMoveTime = 0;
         const throttledHandleMouseMove = (e) => {
             const now = performance.now();
-            
+
             // Always track in mousePathRef for detailed path analysis
             if (shouldLogBehavior && !isAnswered) {
                 mousePathRef.current.push({
@@ -57,9 +60,11 @@ function AnimalSelectionPage() {
                     mousePathRef.current.shift();
                 }
             }
-            
+
             // Capture as event for behavior tracking (throttled to ~20 events/sec)
-            if (shouldLogBehavior && !isAnswered && isRecording && (now - lastMouseMoveTime >= 50)) {
+            // Note: We check isRecording from the hook, but we don't include it in dependency array
+            // to avoid re-attaching listener constantly. The captureEvent function checks isRecording internally anyway.
+            if (shouldLogBehavior && !isAnswered && (now - lastMouseMoveTime >= 50)) {
                 captureEvent('mousemove', e, containerRef.current);
                 lastMouseMoveTime = now;
             }
@@ -69,7 +74,7 @@ function AnimalSelectionPage() {
         return () => {
             document.removeEventListener('mousemove', throttledHandleMouseMove);
         };
-    }, [shouldLogBehavior, isAnswered, isRecording, startRecording, captureEvent]);
+    }, [shouldLogBehavior, isAnswered, captureEvent]);
 
     const [displayOptions] = React.useState(() => {
         if (!seenAnimal) return [];
@@ -105,14 +110,14 @@ function AnimalSelectionPage() {
             const path = mousePathRef.current;
             let totalPathLength = 0;
             let pathStraightness = 0;
-            
+
             if (path.length > 1) {
                 for (let i = 1; i < path.length; i++) {
-                    const dx = path[i].x - path[i-1].x;
-                    const dy = path[i].y - path[i-1].y;
+                    const dx = path[i].x - path[i - 1].x;
+                    const dy = path[i].y - path[i - 1].y;
                     totalPathLength += Math.sqrt(dx * dx + dy * dy);
                 }
-                
+
                 // Straightness: direct distance / actual path length
                 if (path.length > 0 && totalPathLength > 0) {
                     const directDist = Math.sqrt(
@@ -157,7 +162,7 @@ function AnimalSelectionPage() {
                 });
 
                 const result = await response.json();
-                
+
                 if (result.success) {
                     console.log(`✓ Layer 3 data saved to ${CAPTCHA_ID}.csv`);
                 } else {
@@ -180,7 +185,7 @@ function AnimalSelectionPage() {
     }
     const handleOptionHover = (optionIndex, isEntering) => {
         if (!shouldLogBehavior || isAnswered) return;
-        
+
         const now = performance.now();
         if (isEntering) {
             // Store start time for this hover
