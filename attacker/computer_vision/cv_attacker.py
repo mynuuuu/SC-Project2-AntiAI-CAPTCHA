@@ -1455,9 +1455,40 @@ class CVAttacker:
             
             logger.info(f"Target dial angle: {target_dial_angle:.1f}°, Current: {current_dial_rotation:.1f}°, Need to rotate: {rotation_needed:.1f}°")
             
+            # Get dial position for event recording (needed even if no rotation)
+            dial_location = dial_element.location
+            dial_size = dial_element.size
+            dial_center_x = dial_location['x'] + dial_size['width'] / 2
+            dial_center_y = dial_location['y'] + dial_size['height'] / 2
+            
+            # Initialize last_position to dial center if not already set
+            if last_position == (0, 0):
+                last_position = (dial_center_x, dial_center_y)
+            
             # Drag the dial to the target angle using JavaScript to simulate mouse events
             if abs(rotation_needed) > 1:  # Only rotate if significant change needed
                 logger.info(f"Rotating dial from {current_dial_rotation:.1f}° to {target_dial_angle:.1f}°")
+                
+                dial_radius = (dial_size['width'] / 2) - 30  # Match JavaScript radius calculation
+                
+                # Calculate start and end positions for event recording
+                import math
+                start_rad = math.radians(current_dial_rotation)
+                end_rad = math.radians(target_dial_angle)
+                start_x = dial_center_x + dial_radius * math.sin(start_rad)
+                start_y = dial_center_y - dial_radius * math.cos(start_rad)
+                end_x = dial_center_x + dial_radius * math.sin(end_rad)
+                end_y = dial_center_y - dial_radius * math.cos(end_rad)
+                
+                # Record mousedown event at start position
+                if self.use_model_classification or self.save_behavior_data:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mousedown', start_x, start_y, time_since_start, 
+                                     time_since_last, last_position)
+                    last_position = (start_x, start_y)
+                    last_event_time = current_time
                 
                 drag_success = False
                 try:
@@ -1550,15 +1581,57 @@ class CVAttacker:
                         setTimeout(function() { simulateStep(1); }, 100);
                     """, dial_element, target_angle_py, current_angle_py)
                     
+                    # Record mousemove events during the drag (sample a few points)
+                    if self.use_model_classification or self.save_behavior_data:
+                        num_samples = 10  # Record 10 intermediate points
+                        for i in range(1, num_samples + 1):
+                            t = i / (num_samples + 1)  # Interpolation factor
+                            # Interpolate angle
+                            angle_delta = (target_dial_angle - current_dial_rotation) % 360
+                            if angle_delta > 180:
+                                angle_delta = angle_delta - 360
+                            interp_angle = current_dial_rotation + angle_delta * t
+                            interp_rad = math.radians(interp_angle)
+                            interp_x = dial_center_x + dial_radius * math.sin(interp_rad)
+                            interp_y = dial_center_y - dial_radius * math.cos(interp_rad)
+                            
+                            # Simulate timing (spread over the drag duration)
+                            current_time = time.time() + (i * 0.05)  # 50ms per step
+                            time_since_start = (current_time - start_time) * 1000
+                            time_since_last = 50.0  # ~50ms between moves
+                            self._record_event('mousemove', interp_x, interp_y, time_since_start, 
+                                             time_since_last, last_position)
+                            last_position = (interp_x, interp_y)
+                    
                     # Wait for the JavaScript animation to complete
                     time.sleep((15 * 0.05) + 0.5)  # 15 steps * 50ms + buffer
                     logger.info(f"✓ Completed drag simulation to {target_dial_angle}°")
                     drag_success = True
                     
+                    # Record mouseup event at end position
+                    if self.use_model_classification or self.save_behavior_data:
+                        current_time = time.time()
+                        time_since_start = (current_time - start_time) * 1000
+                        time_since_last = (current_time - last_event_time) * 1000
+                        self._record_event('mouseup', end_x, end_y, time_since_start, 
+                                         time_since_last, last_position)
+                        last_position = (end_x, end_y)
+                        last_event_time = current_time
+                    
                 except Exception as drag_e:
                     logger.error(f"✗ JavaScript drag simulation failed: {drag_e}")
                     import traceback
                     traceback.print_exc()
+                    
+                    # Still record mouseup even if drag failed
+                    if self.use_model_classification or self.save_behavior_data:
+                        current_time = time.time()
+                        time_since_start = (current_time - start_time) * 1000
+                        time_since_last = (current_time - last_event_time) * 1000
+                        self._record_event('mouseup', start_x, start_y, time_since_start, 
+                                         time_since_last, last_position)
+                        last_position = (start_x, start_y)
+                        last_event_time = current_time
             
             # Verify final rotation
             time.sleep(1.0)  # Give more time for React to update
@@ -1585,7 +1658,35 @@ class CVAttacker:
             try:
                 submit_button = captcha_element.find_element(By.CSS_SELECTOR, ".dial-captcha-button-submit, button[class*='submit']")
                 logger.info("Clicking submit button...")
+                
+                # Get submit button location for event recording
+                submit_location = submit_button.location
+                submit_size = submit_button.size
+                submit_x = submit_location['x'] + submit_size['width'] / 2
+                submit_y = submit_location['y'] + submit_size['height'] / 2
+                
+                # Record mousedown on submit button
+                if self.use_model_classification or self.save_behavior_data:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mousedown', submit_x, submit_y, time_since_start, 
+                                     time_since_last, last_position)
+                    last_position = (submit_x, submit_y)
+                    last_event_time = current_time
+                
                 submit_button.click()
+                
+                # Record mouseup on submit button
+                if self.use_model_classification or self.save_behavior_data:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mouseup', submit_x, submit_y, time_since_start, 
+                                     time_since_last, last_position)
+                    last_position = (submit_x, submit_y)
+                    last_event_time = current_time
+                
                 time.sleep(2.5)  # Wait longer for result
                 
                 # Check for success message
