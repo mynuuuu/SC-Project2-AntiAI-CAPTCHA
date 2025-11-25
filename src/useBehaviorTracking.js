@@ -188,13 +188,26 @@ const useBehaviorTracking = () => {
   }, [sessionId, convertToCSV, downloadCSV]);
 
   // Send data to server (for captcha-specific files)
-  const sendToServer = useCallback(async (serverUrl, captchaType, userType = 'human', captchaId = 'captcha1', success = false) => {
-    if (eventsRef.current.length === 0) {
-      console.warn('No events to send!');
-      return { success: false, error: 'No events' };
+  const sendToServer = useCallback(async (serverUrl, captchaType, userType = 'human', captchaId = 'captcha1', success = false, extraMetadata = {}, eventsToSend = null) => {
+    // Use provided events or fall back to eventsRef.current
+    const events = eventsToSend !== null ? eventsToSend : eventsRef.current;
+    
+    // Allow sending even with minimal events - metadata is important
+    if (events.length === 0) {
+      console.warn('No events to send, but will send metadata anyway');
     }
 
     try {
+      const baseMetadata = {
+        user_agent: navigator.userAgent,
+        screen_width: window.screen.width,
+        screen_height: window.screen.height,
+        viewport_width: window.innerWidth,
+        viewport_height: window.innerHeight,
+      };
+      
+      const metadata = { ...baseMetadata, ...extraMetadata };
+
       const response = await fetch(serverUrl, {
         method: 'POST',
         headers: {
@@ -204,14 +217,8 @@ const useBehaviorTracking = () => {
           captcha_id: captchaId,
           session_id: sessionId,
           captchaType: captchaType,
-          events: eventsRef.current,
-          metadata: {
-            user_agent: navigator.userAgent,
-            screen_width: window.screen.width,
-            screen_height: window.screen.height,
-            viewport_width: window.innerWidth,
-            viewport_height: window.innerHeight,
-          },
+          events: events,
+          metadata: metadata,
           success: success,
         }),
       });
@@ -221,8 +228,15 @@ const useBehaviorTracking = () => {
         console.log('Data sent to server successfully:', result);
         return { success: true, result };
       } else {
-        console.error('Server error:', response.statusText);
-        return { success: false, error: response.statusText };
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || response.statusText };
+        }
+        console.error('Server error:', response.status, errorData);
+        return { success: false, error: errorData.error || response.statusText, status: response.status };
       }
     } catch (error) {
       console.error('Network error:', error);
