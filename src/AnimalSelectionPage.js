@@ -5,6 +5,8 @@ import useBehaviorTracking from './useBehaviorTracking';
 import { shouldCaptureBehavior } from './utils/behaviorMode';
 import './App.css';
 
+const CAPTCHA_ID = 'captcha3';
+
 function AnimalSelectionPage() {
     const location = useLocation();
     const navigate = useNavigate();
@@ -145,7 +147,7 @@ function AnimalSelectionPage() {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        captcha_id: 'layer3_question',
+                        captcha_id: CAPTCHA_ID,
                         session_id: sessionId,
                         captchaType: 'question',
                         events: events,
@@ -157,7 +159,7 @@ function AnimalSelectionPage() {
                 const result = await response.json();
                 
                 if (result.success) {
-                    console.log(`✓ Layer 3 data saved to layer3_question.csv`);
+                    console.log(`✓ Layer 3 data saved to ${CAPTCHA_ID}.csv`);
                 } else {
                     console.error('Failed to save data:', result.error);
                 }

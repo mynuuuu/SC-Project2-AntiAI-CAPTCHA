@@ -4,6 +4,7 @@ import useBehaviorTracking from './useBehaviorTracking';
 import { shouldCaptureBehavior } from './utils/behaviorMode';
 
 const TOLERANCE = 10; // degrees tolerance for correct alignment
+const CAPTCHA_ID = 'captcha2';
 
 // Available animal images with their corresponding directions
 const animalImages = [
@@ -304,7 +305,7 @@ function DialRotationCaptcha({ onSuccess }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            captcha_id: 'rotation_layer',
+            captcha_id: CAPTCHA_ID,
             session_id: sessionId,
             captchaType: 'rotation',
             events: events,
@@ -316,7 +317,7 @@ function DialRotationCaptcha({ onSuccess }) {
         const result = await response.json();
         
         if (result.success) {
-          console.log(`✓ Rotation data saved to rotation_layer.csv`);
+          console.log(`✓ Rotation data saved to ${CAPTCHA_ID}.csv`);
         } else {
           console.error('Failed to save data:', result.error);
         }
