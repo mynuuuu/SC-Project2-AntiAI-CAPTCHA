@@ -340,6 +340,13 @@ function DialRotationCaptcha({ onSuccess }) {
     }
   };
 
+  const handleSkip = () => {
+    setMessage('⏭️ Skipped');
+    if (onSuccess) {
+      setTimeout(onSuccess, 500); // Navigate to next captcha
+    }
+  };
+
   // Add event listeners
   React.useEffect(() => {
     if (isDragging) {
@@ -432,6 +439,12 @@ function DialRotationCaptcha({ onSuccess }) {
           className="dial-captcha-button-submit"
         >
           Submit
+        </button>
+        <button
+          onClick={handleSkip}
+          className="dial-captcha-button-skip"
+        >
+          Skip
         </button>
       </div>
 
