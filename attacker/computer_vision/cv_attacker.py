@@ -650,8 +650,8 @@ class CVAttacker:
             True if drag completed successfully
         """
         try:
-            # Reset behavior events for this attack
-            self.behavior_events = []
+            # Don't reset behavior events here - they're managed by start_new_session()
+            # self.behavior_events = []  # COMMENTED OUT - session handles this now
             start_time = time.time()
             last_event_time = start_time
             last_position = (start_x, start_y)
@@ -662,7 +662,7 @@ class CVAttacker:
             actions.move_to_element(element)
             
             # Record mousedown event
-            if self.use_model_classification:
+            if self.use_model_classification or self.save_behavior_data:
                 self._record_event('mousedown', start_x, start_y, start_time, 0, last_position)
             
             actions.click_and_hold()
@@ -698,7 +698,7 @@ class CVAttacker:
                 current_time = time.time()
                 
                 # Record mousemove event
-                if self.use_model_classification:
+                if self.use_model_classification or self.save_behavior_data:
                     time_since_start = (current_time - start_time) * 1000  # Convert to ms
                     time_since_last = (current_time - last_event_time) * 1000
                     self._record_event('mousemove', current_x, current_y, time_since_start, 
@@ -726,7 +726,7 @@ class CVAttacker:
             
             # Record mouseup event
             end_time = time.time()
-            if self.use_model_classification:
+            if self.use_model_classification or self.save_behavior_data:
                 time_since_start = (end_time - start_time) * 1000
                 time_since_last = (end_time - last_event_time) * 1000
                 self._record_event('mouseup', current_x, current_y, time_since_start, 
@@ -814,7 +814,16 @@ class CVAttacker:
             captcha_type: Type of captcha ('captcha1', 'captcha2', 'captcha3')
             success: Whether the captcha was solved successfully
         """
-        if not self.save_behavior_data or not self.behavior_events:
+        logger.info(f"🔍 Attempting to save behavior data for {captcha_type}")
+        logger.info(f"   save_behavior_data={self.save_behavior_data}, num_events={len(self.behavior_events)}")
+        
+        if not self.save_behavior_data:
+            logger.warning(f"⚠️  Skipping save: save_behavior_data is False")
+            return
+        
+        if not self.behavior_events:
+            logger.warning(f"⚠️  Skipping save for {captcha_type}: No behavior events tracked!")
+            logger.warning(f"   use_model_classification={self.use_model_classification}")
             return
         
         try:
@@ -1355,8 +1364,8 @@ class CVAttacker:
         try:
             logger.info("Attempting to solve rotation puzzle using computer vision...")
             
-            # Reset behavior events for this puzzle
-            self.behavior_events = []
+            # Don't reset behavior events here - they're managed by start_new_session()
+            # self.behavior_events = []  # COMMENTED OUT - session handles this now
             start_time = time.time()
             last_event_time = start_time
             last_position = (0, 0)
@@ -1455,6 +1464,10 @@ class CVAttacker:
                     # Use JavaScript to simulate the drag with proper React events
                     logger.info("Simulating drag using JavaScript mouse events...")
                     
+                    # Convert numpy float32 to Python float for JSON serialization
+                    target_angle_py = float(target_dial_angle)
+                    current_angle_py = float(current_dial_rotation)
+                    
                     self.driver.execute_script("""
                         var dial = arguments[0];
                         var targetAngle = arguments[1];
@@ -1535,7 +1548,7 @@ class CVAttacker:
                         
                         // Start the drag simulation
                         setTimeout(function() { simulateStep(1); }, 100);
-                    """, dial_element, target_dial_angle, current_dial_rotation)
+                    """, dial_element, target_angle_py, current_angle_py)
                     
                     # Wait for the JavaScript animation to complete
                     time.sleep((15 * 0.05) + 0.5)  # 15 steps * 50ms + buffer
@@ -1730,7 +1743,7 @@ class CVAttacker:
                 button_y = button_location['y'] + button_size['height'] / 2
                 
                 # Record mousedown event
-                if self.use_model_classification:
+                if self.use_model_classification or self.save_behavior_data:
                     current_time = time.time()
                     time_since_start = (current_time - start_time) * 1000
                     time_since_last = (current_time - last_event_time) * 1000
@@ -1792,7 +1805,7 @@ class CVAttacker:
                         logger.error(f"Regular click failed: {click_e}")
                 
                 # Record mouseup event
-                if self.use_model_classification:
+                if self.use_model_classification or self.save_behavior_data:
                     current_time = time.time()
                     time_since_start = (current_time - start_time) * 1000
                     time_since_last = (current_time - last_event_time) * 1000
@@ -1852,7 +1865,7 @@ class CVAttacker:
                 submit_x = submit_location['x'] + submit_size['width'] / 2
                 submit_y = submit_location['y'] + submit_size['height'] / 2
                 
-                if self.use_model_classification:
+                if self.use_model_classification or self.save_behavior_data:
                     current_time = time.time()
                     time_since_start = (current_time - start_time) * 1000
                     time_since_last = (current_time - last_event_time) * 1000
@@ -1864,7 +1877,7 @@ class CVAttacker:
                 submit_button.click()
                 logger.info("Clicked submit button")
                 
-                if self.use_model_classification:
+                if self.use_model_classification or self.save_behavior_data:
                     current_time = time.time()
                     time_since_start = (current_time - start_time) * 1000
                     time_since_last = (current_time - last_event_time) * 1000
@@ -2233,7 +2246,12 @@ class CVAttacker:
                 logger.error("✗ No flying animal was detected during second captcha!")
                 logger.info("📋 Attempting to find available options anyway...")
                 
-                # Try to list available options
+                # Initialize timing for minimal event tracking
+                start_time = time.time()
+                last_event_time = start_time
+                last_position = (0, 0)
+                
+                # Try to list available options and maybe record a click anyway
                 try:
                     time.sleep(2)
                     animal_options = self.driver.find_elements(By.XPATH, "//div[contains(@style, 'cursor: pointer')]//p")
@@ -2242,12 +2260,48 @@ class CVAttacker:
                         for opt in animal_options:
                             logger.info(f"  - {opt.text}")
                         logger.warning("❌ But we don't know which one is correct - detection failed")
+                        
+                        # Click a random option just to generate some behavior data
+                        if animal_options and len(animal_options) > 0:
+                            random_option = animal_options[0].find_element(By.XPATH, "..")
+                            option_location = random_option.location
+                            option_size = random_option.size
+                            option_x = option_location['x'] + option_size['width'] / 2
+                            option_y = option_location['y'] + option_size['height'] / 2
+                            
+                            # Record mousedown event
+                            if self.use_model_classification or self.save_behavior_data:
+                                current_time = time.time()
+                                time_since_start = (current_time - start_time) * 1000
+                                time_since_last = (current_time - last_event_time) * 1000
+                                self._record_event('mousedown', option_x, option_y, time_since_start, 
+                                                 time_since_last, last_position)
+                                last_position = (option_x, option_y)
+                                last_event_time = current_time
+                            
+                            random_option.click()
+                            
+                            # Record mouseup event
+                            if self.use_model_classification or self.save_behavior_data:
+                                current_time = time.time()
+                                time_since_start = (current_time - start_time) * 1000
+                                time_since_last = (current_time - last_event_time) * 1000
+                                self._record_event('mouseup', option_x, option_y, time_since_start, 
+                                                 time_since_last, last_position)
+                            
+                            logger.info("Clicked first option as fallback (will fail, but generates data)")
+                            time.sleep(1)
                 except Exception as e:
                     logger.error(f"Could not even list options: {e}")
                 
                 return False
             
             logger.info(f"🎯 Using detected animal: {self.detected_sliding_animal}")
+            
+            # Initialize timing for event tracking
+            start_time = time.time()
+            last_event_time = start_time
+            last_position = (0, 0)
             
             # Wait for the animal selection page to load
             time.sleep(2)
@@ -2261,7 +2315,33 @@ class CVAttacker:
                 )
                 
                 logger.info(f"✓ Found animal option for '{self.detected_sliding_animal}', clicking...")
+                
+                # Get option location for behavior tracking
+                option_location = animal_option.location
+                option_size = animal_option.size
+                option_x = option_location['x'] + option_size['width'] / 2
+                option_y = option_location['y'] + option_size['height'] / 2
+                
+                # Record mousedown event
+                if self.use_model_classification or self.save_behavior_data:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mousedown', option_x, option_y, time_since_start, 
+                                     time_since_last, last_position)
+                    last_position = (option_x, option_y)
+                    last_event_time = current_time
+                
                 animal_option.click()
+                
+                # Record mouseup event
+                if self.use_model_classification or self.save_behavior_data:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mouseup', option_x, option_y, time_since_start, 
+                                     time_since_last, last_position)
+                
                 time.sleep(2)
                 
                 # Check for success message
@@ -2463,10 +2543,6 @@ class CVAttacker:
                 rotation_success = self.solve_rotation_puzzle(rotation_element)
                 result['rotation_result'] = {'success': rotation_success}
                 
-                # Save bot behavior data to CSV
-                if self.save_behavior_data:
-                    self.save_behavior_to_csv('captcha2', rotation_success)
-                
                 # If rotation puzzle failed, try to skip
                 if not rotation_success:
                     logger.warning("⚠️ Rotation puzzle failed, attempting to skip...")
@@ -2510,6 +2586,10 @@ class CVAttacker:
                 rotation_success = False
                 self.click_skip_button()
             
+            # Save rotation behavior data (after try-except so it always runs)
+            if self.save_behavior_data:
+                self.save_behavior_to_csv('captcha2', rotation_success)
+            
             # ===== SOLVE THIRD CAPTCHA (ANIMAL IDENTIFICATION) =====
             logger.info("\n" + "="*60)
             logger.info("ATTEMPTING THIRD CAPTCHA (ANIMAL IDENTIFICATION)")
@@ -2546,9 +2626,10 @@ class CVAttacker:
                         third_captcha_success = self.solve_third_captcha()
                         result['third_captcha_result'] = {'success': third_captcha_success, 'animal': self.detected_sliding_animal}
                         
-                        # Save bot behavior data to CSV
+                        # Save bot behavior data to CSV (mark that we saved)
                         if self.save_behavior_data:
                             self.save_behavior_to_csv('captcha3', third_captcha_success)
+                            self.current_captcha_id = None  # Mark as saved
                         
                         if third_captcha_success:
                             logger.info("✓ Third captcha solved successfully!")
@@ -2563,9 +2644,10 @@ class CVAttacker:
                         third_captcha_success = self.solve_third_captcha()
                         result['third_captcha_result'] = {'success': third_captcha_success, 'error': 'Page not confirmed', 'animal': self.detected_sliding_animal}
                         
-                        # Save bot behavior data to CSV
+                        # Save bot behavior data to CSV (mark that we saved)
                         if self.save_behavior_data:
                             self.save_behavior_to_csv('captcha3', third_captcha_success)
+                            self.current_captcha_id = None  # Mark as saved
                 else:
                     logger.error("❌ No flying animal was detected, cannot solve third captcha")
                     logger.info("🔍 Checking if we're on the animal selection page anyway...")
@@ -2579,9 +2661,10 @@ class CVAttacker:
                             third_captcha_success = self.solve_third_captcha()  # Will show options
                             result['third_captcha_result'] = {'success': False, 'error': 'No animal detected'}
                             
-                            # Save bot behavior data to CSV
+                            # Save bot behavior data to CSV (mark that we saved)
                             if self.save_behavior_data:
                                 self.save_behavior_to_csv('captcha3', False)
+                                self.current_captcha_id = None  # Mark as saved
                     except:
                         logger.info("❌ Not on animal selection page either")
                         result['third_captcha_result'] = {'success': False, 'error': 'No animal detected'}
@@ -2591,6 +2674,12 @@ class CVAttacker:
                 result['third_captcha_result'] = {'success': False, 'error': str(e)}
                 import traceback
                 traceback.print_exc()
+            
+            # Save third captcha behavior data (after try-except so it always runs if we attempted it)
+            # Only save if we actually started a session for captcha3
+            if self.save_behavior_data and self.current_captcha_id == 'captcha3':
+                logger.info("💾 Saving third captcha data from exception handler...")
+                self.save_behavior_to_csv('captcha3', third_captcha_success)
             
             # Overall success if all solved
             result['success'] = slider_success and (rotation_success or third_captcha_success)
