@@ -11,12 +11,13 @@ import csv
 import os
 from datetime import datetime
 import json
-
+from pathlib import Path
 app = Flask(__name__)
 CORS(app)  # Enable CORS for web interface communication
 
-# Configuration
-DATA_DIR = '../data'  # Use the data folder in parent directory
+# Configuration - Use absolute path based on script location
+BASE_DIR = Path(__file__).resolve().parent.parent  # Go up from behaviour_analysis/ to project root
+DATA_DIR = str(BASE_DIR / 'data')  # Project root / data folder
 CSV_FILENAME = 'user_behavior_events.csv'
 
 # CSV Headers - defines all the fields we're tracking
@@ -49,7 +50,9 @@ CSV_HEADERS = [
     'viewport_width',
     'viewport_height',
     'user_type',  # 'human' or 'ai' - to be labeled later
-    'challenge_type'  # type of challenge being solved
+    'challenge_type',  # type of challenge being solved
+    'captcha_id',  # specific captcha identifier
+    'metadata_json'  # JSON string of additional metadata (rotation-specific features, etc.)
 ]
 
 
@@ -237,6 +240,7 @@ def save_captcha_events():
         
         captcha_id = data.get('captcha_id')
         session_id = data.get('session_id')
+        captcha_type = data.get('captchaType')
         events = data.get('events', [])
         metadata = data.get('metadata', {})
         success = data.get('success', False)
@@ -244,21 +248,36 @@ def save_captcha_events():
         if not captcha_id:
             return jsonify({'error': 'captcha_id is required'}), 400
         
-        if captcha_id not in ['captcha1', 'captcha2', 'captcha3']:
-            return jsonify({'error': 'captcha_id must be captcha1, captcha2, or captcha3'}), 400
+        if captcha_id not in ['captcha1', 'captcha2', 'captcha3', 'rotation1', 'rotation_layer', 'layer3_question']:
+            return jsonify({'error': 'captcha_id must be captcha1, captcha2, captcha3, rotation1, rotation_layer, or layer3_question'}), 400
         
         if not session_id:
             return jsonify({'error': 'session_id is required'}), 400
         
-        if not events:
-            return jsonify({'error': 'No events provided'}), 400
+        # Allow empty events for Layer 3 question captcha (metadata is more important)
+        if events is None:
+            events = []
+        if not isinstance(events, list):
+            return jsonify({'error': 'events must be a list'}), 400
+        
+        if not captcha_type:
+            return jsonify({'error': 'captchaType is required'}), 400
+        
+        if captcha_type not in ['rotation', 'slider', 'temporal', 'question']:
+            return jsonify({'error': 'captchaType must be rotation, slider, temporal, or question'}), 400
         
         # Ensure data directory exists
         if not os.path.exists(DATA_DIR):
             os.makedirs(DATA_DIR)
         
         # Captcha-specific file path
-        csv_filename = f'{captcha_id}.csv'
+        # Map captcha IDs to CSV filenames
+        file_mapping = {
+            'rotation_layer': 'rotation_layer.csv',
+            'rotation1': 'rotation1.csv',
+            'layer3_question': 'layer3_question.csv',
+        }
+        csv_filename = file_mapping.get(captcha_id, f'{captcha_id}.csv')
         csv_path = os.path.join(DATA_DIR, csv_filename)
         
         # Check if file exists and has proper headers
@@ -320,6 +339,9 @@ def save_captcha_events():
                 row['viewport_height'] = metadata.get('viewport_height', '')
                 row['user_type'] = 'human'  # Default to human
                 row['challenge_type'] = f"{captcha_id}_{'success' if success else 'failed'}"
+                row['captcha_id'] = captcha_id
+                # Store full metadata as JSON string for rotation-specific features
+                row['metadata_json'] = json.dumps(metadata)
                 
                 writer.writerow(row)
         
@@ -453,10 +475,11 @@ if __name__ == '__main__':
     print("\nServer starting...")
     print("Access at: http://localhost:5001")
     print("\nEndpoints:")
-    print("  GET  /          - Health check")
-    print("  POST /save_events - Save captured events")
-    print("  GET  /stats     - View collection statistics")
-    print("  GET  /sessions  - List recent sessions")
+    print("  GET  /                    - Health check")
+    print("  POST /save_events         - Save captured events")
+    print("  POST /save_captcha_events - Save captcha-specific events")
+    print("  GET  /stats               - View collection statistics")
+    print("  GET  /sessions            - List recent sessions")
     print("  GET  /export/<session_id> - Export session data")
     print("\nPress Ctrl+C to stop")
     print("=" * 60)

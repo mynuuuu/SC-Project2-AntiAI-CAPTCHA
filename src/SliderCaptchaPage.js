@@ -27,19 +27,19 @@ function SliderCaptchaPage() {
     'https://picsum.photos/seed/lake10/400/200',
   ], []);
 
-  // Randomly select 3 images from the pool (only once on component mount)
+  // Randomly select 1 image from the pool (only once on component mount)
   const captchaImages = useMemo(() => {
     // Shuffle the image pool
     const shuffled = [...imagePool].sort(() => Math.random() - 0.5);
 
-    // Select the first 3 images
-    const selectedImages = shuffled.slice(0, 1);
+    // Select the first image
+    const selectedImage = shuffled[0];
 
     return [
       {
         id: 'captcha1',
-        title: 'Slider Captcha',
-        bgUrl: selectedImages[0],
+        title: 'Captcha 1',
+        bgUrl: selectedImage,
       }
     ];
   }, [imagePool]);
@@ -70,7 +70,7 @@ function SliderCaptchaPage() {
     <div className="App">
       <header className="App-header">
         <h1>Turing Tester</h1>
-        <p>Complete all captchas to verify you're human</p>
+        <p>Complete the captcha to verify you're human</p>
       </header>
 
       <div className="captcha-container">
@@ -81,6 +81,7 @@ function SliderCaptchaPage() {
               <CustomSliderCaptcha
                 key={resetKeys[captcha.id]}
                 imageUrl={captcha.bgUrl}
+                captchaId={captcha.id}
                 onVerify={(data) => handleVerify(captcha.id, data)}
                 onReset={() => resetCaptcha(captcha.id)}
               />

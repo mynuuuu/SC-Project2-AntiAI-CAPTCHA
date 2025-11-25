@@ -29,10 +29,14 @@ from enum import Enum
 import pandas as pd
 import sys
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+import uuid
+import json
 
 # Add scripts directory to path to import ml_core
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SCRIPTS_DIR = BASE_DIR / "scripts"
+DATA_DIR = BASE_DIR / "data"  # Data directory for saving bot behavior
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 try:
@@ -69,7 +73,7 @@ class CVAttacker:
     
     def __init__(self, headless: bool = False, wait_time: int = 3, 
                  chromedriver_path: Optional[str] = None, browser_binary: Optional[str] = None,
-                 use_model_classification: bool = True):
+                 use_model_classification: bool = True, save_behavior_data: bool = True):
         """
         Initialize the CV attacker
         
@@ -79,12 +83,22 @@ class CVAttacker:
             chromedriver_path: Optional path to ChromeDriver executable
             browser_binary: Optional path to browser binary (e.g., '/Applications/Arc.app/Contents/MacOS/Arc')
             use_model_classification: Whether to use ML model to classify attack behavior
+            save_behavior_data: Whether to save bot behavior data to CSV files
         """
         self.wait_time = wait_time
         self.driver = None
         self.headless = headless
         self.use_model_classification = use_model_classification and MODEL_AVAILABLE
+        self.save_behavior_data = save_behavior_data
         self.behavior_events = []  # Store mouse events for model classification
+        self.detected_sliding_animal = None  # Store detected sliding animal for third captcha
+        
+        # Session tracking for data saving
+        self.session_id = None
+        self.session_start_time = None
+        self.current_captcha_id = None
+        self.captcha_metadata = {}
+        
         self.setup_driver(chromedriver_path, browser_binary)
         
     def setup_driver(self, chromedriver_path: Optional[str] = None, browser_binary: Optional[str] = None):
@@ -185,6 +199,20 @@ class CVAttacker:
         
         logger.warning("Could not determine puzzle type, defaulting to SLIDER_PUZZLE")
         return PuzzleType.SLIDER_PUZZLE
+
+    def _with_attack_mode(self, url: str) -> str:
+        """
+        Append an attackMode flag to the URL so the frontend can skip logging our behavior.
+        """
+        try:
+            parsed = urlparse(url)
+            query = parse_qs(parsed.query)
+            query['attackMode'] = ['1']
+            new_query = urlencode(query, doseq=True)
+            return urlunparse(parsed._replace(query=new_query))
+        except Exception as error:
+            logger.warning(f"Unable to append attackMode param to URL '{url}': {error}")
+            return url
     
     def solve_slider_puzzle(self, captcha_element) -> bool:
         """
@@ -622,8 +650,8 @@ class CVAttacker:
             True if drag completed successfully
         """
         try:
-            # Reset behavior events for this attack
-            self.behavior_events = []
+            # Don't reset behavior events here - they're managed by start_new_session()
+            # self.behavior_events = []  # COMMENTED OUT - session handles this now
             start_time = time.time()
             last_event_time = start_time
             last_position = (start_x, start_y)
@@ -634,7 +662,7 @@ class CVAttacker:
             actions.move_to_element(element)
             
             # Record mousedown event
-            if self.use_model_classification:
+            if self.use_model_classification or self.save_behavior_data:
                 self._record_event('mousedown', start_x, start_y, start_time, 0, last_position)
             
             actions.click_and_hold()
@@ -670,7 +698,7 @@ class CVAttacker:
                 current_time = time.time()
                 
                 # Record mousemove event
-                if self.use_model_classification:
+                if self.use_model_classification or self.save_behavior_data:
                     time_since_start = (current_time - start_time) * 1000  # Convert to ms
                     time_since_last = (current_time - last_event_time) * 1000
                     self._record_event('mousemove', current_x, current_y, time_since_start, 
@@ -698,7 +726,7 @@ class CVAttacker:
             
             # Record mouseup event
             end_time = time.time()
-            if self.use_model_classification:
+            if self.use_model_classification or self.save_behavior_data:
                 time_since_start = (end_time - start_time) * 1000
                 time_since_last = (end_time - last_event_time) * 1000
                 self._record_event('mouseup', current_x, current_y, time_since_start, 
@@ -778,16 +806,554 @@ class CVAttacker:
             logger.error(f"Error classifying behavior: {e}")
             return None
     
+    def save_behavior_to_csv(self, captcha_type: str, success: bool) -> None:
+        """
+        Save bot behavior data to CSV file
+        
+        Args:
+            captcha_type: Type of captcha ('captcha1', 'captcha2', 'captcha3')
+            success: Whether the captcha was solved successfully
+        """
+        logger.info(f"🔍 Attempting to save behavior data for {captcha_type}")
+        logger.info(f"   save_behavior_data={self.save_behavior_data}, num_events={len(self.behavior_events)}")
+        
+        if not self.save_behavior_data:
+            logger.warning(f"⚠️  Skipping save: save_behavior_data is False")
+            return
+        
+        if not self.behavior_events:
+            logger.warning(f"⚠️  Skipping save for {captcha_type}: No behavior events tracked!")
+            logger.warning(f"   use_model_classification={self.use_model_classification}")
+            return
+        
+        try:
+            # Determine output file based on captcha type
+            output_file = DATA_DIR / f"bot_{captcha_type}.csv"
+            
+            # Create DataFrame from behavior events
+            df = pd.DataFrame(self.behavior_events)
+            
+            if len(df) == 0:
+                logger.warning(f"No behavior events to save for {captcha_type}")
+                return
+            
+            # Add required columns to match human data format
+            df['session_id'] = self.session_id
+            df['timestamp'] = (self.session_start_time * 1000 + df['time_since_start']).astype(int)
+            df['relative_x'] = 0  # Not tracked by attacker
+            df['relative_y'] = 0  # Not tracked by attacker
+            df['page_x'] = df['client_x']
+            df['page_y'] = df['client_y']
+            df['screen_x'] = df['client_x']  # Approximate
+            df['screen_y'] = df['client_y']  # Approximate
+            df['button'] = 0
+            df['buttons'] = 0
+            df['ctrl_key'] = False
+            df['shift_key'] = False
+            df['alt_key'] = False
+            df['meta_key'] = False
+            df['acceleration'] = 0.0
+            df['direction'] = 0.0
+            df['user_agent'] = 'Bot/CVAttacker'
+            df['screen_width'] = 1920
+            df['screen_height'] = 1080
+            df['viewport_width'] = 1920
+            df['viewport_height'] = 1080
+            df['user_type'] = 'bot'
+            df['challenge_type'] = f"{captcha_type}_{'success' if success else 'failure'}"
+            df['captcha_id'] = captcha_type
+            
+            # Add metadata as JSON if available
+            if self.captcha_metadata:
+                df['metadata_json'] = json.dumps(self.captcha_metadata)
+            
+            # Reorder columns to match human data format
+            column_order = [
+                'session_id', 'timestamp', 'time_since_start', 'time_since_last_event',
+                'event_type', 'client_x', 'client_y', 'relative_x', 'relative_y',
+                'page_x', 'page_y', 'screen_x', 'screen_y', 'button', 'buttons',
+                'ctrl_key', 'shift_key', 'alt_key', 'meta_key', 'velocity',
+                'acceleration', 'direction', 'user_agent', 'screen_width', 'screen_height',
+                'viewport_width', 'viewport_height', 'user_type', 'challenge_type'
+            ]
+            
+            # Add optional columns if they exist
+            if 'captcha_id' in df.columns:
+                column_order.append('captcha_id')
+            if 'metadata_json' in df.columns:
+                column_order.append('metadata_json')
+            
+            # Reorder columns (only include columns that exist)
+            df = df[[col for col in column_order if col in df.columns]]
+            
+            # Check if file exists to determine if we need header
+            file_exists = output_file.exists()
+            
+            # Append to CSV or create new file
+            df.to_csv(output_file, mode='a', header=not file_exists, index=False)
+            
+            logger.info(f"✓ Saved {len(df)} bot behavior events to {output_file}")
+            logger.info(f"  Session ID: {self.session_id}")
+            logger.info(f"  Captcha: {captcha_type}, Success: {success}")
+            
+        except Exception as e:
+            logger.error(f"Error saving behavior data to CSV: {e}")
+    
+    def start_new_session(self, captcha_id: str) -> None:
+        """
+        Start a new session for behavior tracking
+        
+        Args:
+            captcha_id: ID of the captcha being solved
+        """
+        self.session_id = f"bot_session_{int(time.time() * 1000)}_{str(uuid.uuid4())[:8]}"
+        self.session_start_time = time.time()
+        self.current_captcha_id = captcha_id
+        self.behavior_events = []
+        self.captcha_metadata = {}
+        logger.info(f"📝 Started new session: {self.session_id} for {captcha_id}")
+    
+    def _detect_image_orientation(self, image: np.ndarray, is_pointing_object: bool = True) -> float:
+        """
+        Detect the orientation of an image using computer vision.
+        For hand/finger: detects the pointing direction (tip of finger)
+        For animal: detects the face/nose direction using advanced CV
+        
+        Args:
+            image: Image as numpy array (BGR format)
+            is_pointing_object: If True, detects pointing direction (hand).
+                                If False, detects face direction (animal).
+            
+        Returns:
+            Angle in degrees (0-360) representing the orientation
+        """
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape
+        
+        # Method 1: Detect pointing direction by finding the furthest point from center
+        # This works well for pointing objects like fingers
+        if is_pointing_object:
+            # Threshold to get the object (assuming it's brighter or darker than background)
+            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Find contours
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if contours:
+                # Get the largest contour
+                largest_contour = max(contours, key=cv2.contourArea)
+                
+                # Find center of mass
+                M = cv2.moments(largest_contour)
+                if M["m00"] != 0:
+                    cx = int(M["m10"] / M["m00"])
+                    cy = int(M["m01"] / M["m00"])
+                    
+                    # Find the point furthest from center (this is likely the tip)
+                    max_dist = 0
+                    tip_point = None
+                    for point in largest_contour:
+                        for p in point:
+                            px, py = p[0], p[1]
+                            dist = np.sqrt((px - cx)**2 + (py - cy)**2)
+                            if dist > max_dist:
+                                max_dist = dist
+                                tip_point = (px, py)
+                    
+                    if tip_point:
+                        # Calculate angle from center to tip
+                        dx = tip_point[0] - cx
+                        dy = tip_point[1] - cy
+                        angle = np.arctan2(dy, dx) * 180 / np.pi
+                        orientation = (angle + 90) % 360  # Adjust for image coordinate system
+                        logger.debug(f"Detected pointing direction: {orientation:.1f}° (tip at {tip_point})")
+                        return orientation
+        
+        # Method for animals: Find the tangent direction along the nose/snout
+        # This is the straight line direction that the nose is pointing
+        else:
+            # Use edge detection with adaptive thresholding for better results
+            blur = cv2.GaussianBlur(gray, (5, 5), 0)
+            edges = cv2.Canny(blur, 30, 100)
+            
+            # Apply morphological operations to connect edges
+            kernel = np.ones((3, 3), np.uint8)
+            edges = cv2.dilate(edges, kernel, iterations=2)
+            edges = cv2.erode(edges, kernel, iterations=1)
+            
+            # Find contours
+            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if contours:
+                # Get the largest contour (the animal)
+                largest_contour = max(contours, key=cv2.contourArea)
+                
+                if len(largest_contour) > 10:
+                    # Find center of mass of entire animal
+                    M = cv2.moments(largest_contour)
+                    if M["m00"] != 0:
+                        body_cx = int(M["m10"] / M["m00"])
+                        body_cy = int(M["m01"] / M["m00"])
+                    else:
+                        body_cx, body_cy = gray.shape[1] // 2, gray.shape[0] // 2
+                    
+                    # Step 1: Find potential head region(s) by looking for protruding parts
+                    # These are points far from the center
+                    distances = []
+                    for point in largest_contour:
+                        px, py = point[0][0], point[0][1]
+                        dist = np.sqrt((px - body_cx)**2 + (py - body_cy)**2)
+                        distances.append((dist, px, py))
+                    
+                    # Sort by distance and take top candidates
+                    distances.sort(reverse=True)
+                    max_dist = distances[0][0]
+                    
+                    # Head region is likely in the top 20% of distances
+                    head_threshold = max_dist * 0.8
+                    head_candidates = [(px, py) for dist, px, py in distances if dist >= head_threshold]
+                    
+                    if len(head_candidates) >= 3:
+                        # Step 2: Cluster head candidates to find the head region
+                        head_points = np.array(head_candidates, dtype=np.float32)
+                        
+                        # Find center of head region
+                        head_cx = np.mean(head_points[:, 0])
+                        head_cy = np.mean(head_points[:, 1])
+                        
+                        # Step 3: Extract contour points near the head for orientation analysis
+                        head_region_radius = max_dist * 0.35  # Focus on head area
+                        head_contour_points = []
+                        
+                        for point in largest_contour:
+                            px, py = point[0][0], point[0][1]
+                            dist_to_head = np.sqrt((px - head_cx)**2 + (py - head_cy)**2)
+                            if dist_to_head < head_region_radius:
+                                head_contour_points.append([px, py])
+                        
+                        if len(head_contour_points) >= 5:
+                            # Step 4: Use PCA to find the orientation of the head/nose region
+                            head_contour_points = np.array(head_contour_points, dtype=np.float32)
+                            mean = np.empty((0))
+                            mean, eigenvectors, eigenvalues = cv2.PCACompute2(head_contour_points, mean)
+                            
+                            # The first eigenvector represents the main axis of the head/nose
+                            # This is the tangent direction we're looking for
+                            tangent_x = eigenvectors[0, 0]
+                            tangent_y = eigenvectors[0, 1]
+                            
+                            # Determine which direction along the tangent points away from body
+                            # Test both directions
+                            test_dist1 = np.sqrt((head_cx + tangent_x * 30 - body_cx)**2 + 
+                                               (head_cy + tangent_y * 30 - body_cy)**2)
+                            test_dist2 = np.sqrt((head_cx - tangent_x * 30 - body_cx)**2 + 
+                                               (head_cy - tangent_y * 30 - body_cy)**2)
+                            
+                            # Choose direction that moves away from body
+                            if test_dist1 > test_dist2:
+                                final_tangent_x = tangent_x
+                                final_tangent_y = tangent_y
+                            else:
+                                final_tangent_x = -tangent_x
+                                final_tangent_y = -tangent_y
+                            
+                            # Calculate angle of the tangent vector
+                            angle_rad = np.arctan2(final_tangent_y, final_tangent_x)
+                            angle_deg = np.degrees(angle_rad)
+                            
+                            # Convert from image coordinates to compass coordinates
+                            # Image: 0° = right (east), increases counter-clockwise
+                            # Compass: 0° = up (north), increases clockwise
+                            orientation = (90 - angle_deg) % 360
+                            
+                            logger.debug(f"Head region at ({head_cx:.1f}, {head_cy:.1f}), body at ({body_cx}, {body_cy})")
+                            logger.debug(f"Tangent vector: ({final_tangent_x:.3f}, {final_tangent_y:.3f})")
+                            logger.debug(f"Nose tangent direction: {orientation:.1f}°")
+                            
+                            return orientation
+                    
+                    # Fallback: Use minimum area rectangle on entire shape
+                    rect = cv2.minAreaRect(largest_contour)
+                    center, (width, height), angle = rect
+                    
+                    # The longer dimension indicates body orientation
+                    if width > height:
+                        body_angle = angle
+                    else:
+                        body_angle = angle + 90
+                    
+                    # Convert to compass orientation
+                    orientation = (90 - body_angle) % 360
+                    logger.debug(f"Fallback: using body orientation {orientation:.1f}°")
+                    return orientation
+        
+        # Method 2: Use principal component analysis (PCA) to find main axis
+        # This works well for symmetric objects like animals
+        edges = cv2.Canny(gray, 50, 150)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if not contours:
+            return 0.0
+        
+        largest_contour = max(contours, key=cv2.contourArea)
+        
+        # Use PCA to find principal axis
+        if len(largest_contour) > 2:
+            try:
+                # Reshape contour points
+                data_pts = largest_contour.reshape(-1, 2).astype(np.float32)
+                
+                # Calculate PCA
+                mean = np.empty((0))
+                mean, eigenvectors, eigenvalues = cv2.PCACompute2(data_pts, mean)
+                
+                # Get the angle of the first principal component
+                angle = np.arctan2(eigenvectors[0, 1], eigenvectors[0, 0]) * 180 / np.pi
+                orientation = (angle + 90) % 360
+                
+                # For pointing objects, we might need to determine which direction
+                # Check if we should flip 180 degrees by looking at the shape
+                if is_pointing_object:
+                    # Check which end is more "pointy" (has fewer points nearby)
+                    center = (int(mean[0, 0]), int(mean[0, 1]))
+                    # Sample points along the principal axis in both directions
+                    axis_length = np.sqrt(eigenvalues[0, 0]) * 2
+                    dir1 = (int(center[0] + axis_length * eigenvectors[0, 0]), 
+                           int(center[1] + axis_length * eigenvectors[0, 1]))
+                    dir2 = (int(center[0] - axis_length * eigenvectors[0, 0]), 
+                           int(center[1] - axis_length * eigenvectors[0, 1]))
+                    
+                    # Check which direction has more edge points (pointing end is usually sharper)
+                    # This is a heuristic - the pointing end might have more detail
+                    dist1 = min([np.sqrt((p[0] - dir1[0])**2 + (p[1] - dir1[1])**2) 
+                                for point in largest_contour for p in point])
+                    dist2 = min([np.sqrt((p[0] - dir2[0])**2 + (p[1] - dir2[1])**2) 
+                                for point in largest_contour for p in point])
+                    
+                    # If dir2 is closer to contour points, we might need to flip
+                    if dist2 < dist1:
+                        orientation = (orientation + 180) % 360
+                
+                logger.debug(f"Detected orientation via PCA: {orientation:.1f}°")
+                return orientation
+            except Exception as e:
+                logger.debug(f"PCA failed: {e}")
+        
+        # Fallback: Use ellipse fitting
+        if len(largest_contour) >= 5:
+            try:
+                ellipse = cv2.fitEllipse(largest_contour)
+                angle = ellipse[2]
+                orientation = (angle + 90) % 360
+                logger.debug(f"Detected orientation via ellipse: {orientation:.1f}°")
+                return orientation
+            except:
+                pass
+        
+        # Last resort: Use Hough lines
+        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=30, minLineLength=20, maxLineGap=10)
+        if lines is not None and len(lines) > 0:
+            angles = []
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                angle = np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi
+                angles.append(angle)
+            
+            if angles:
+                angles = [(a + 360) % 360 for a in angles]
+                # Use circular mean
+                angles_rad = np.array(angles) * np.pi / 180
+                sin_mean = np.mean(np.sin(angles_rad))
+                cos_mean = np.mean(np.cos(angles_rad))
+                avg_angle = np.arctan2(sin_mean, cos_mean) * 180 / np.pi
+                orientation = (avg_angle + 360) % 360
+                logger.debug(f"Detected orientation via Hough lines: {orientation:.1f}°")
+                return orientation
+        
+        return 0.0
+    
+    def _detect_hand_direction(self, screenshot: np.ndarray, hand_element, parent_location: Dict = None) -> float:
+        """
+        Detect the direction the hand/finger is pointing using CV
+        
+        Args:
+            screenshot: Screenshot (element-relative if parent_location provided, page-relative otherwise)
+            hand_element: Selenium element for the hand image
+            parent_location: Optional location of parent element to adjust coordinates
+            
+        Returns:
+            Angle in degrees (0-360)
+        """
+        try:
+            # Get hand image location and size
+            location = hand_element.location
+            size = hand_element.size
+            
+            # Adjust coordinates if screenshot is element-relative
+            if parent_location:
+                x = int(location['x'] - parent_location['x'])
+                y = int(location['y'] - parent_location['y'])
+            else:
+                x = int(location['x'])
+                y = int(location['y'])
+            
+            w = int(size['width'])
+            h = int(size['height'])
+            
+            # Add some padding
+            padding = 10
+            x = max(0, x - padding)
+            y = max(0, y - padding)
+            w = min(screenshot.shape[1] - x, w + 2 * padding)
+            h = min(screenshot.shape[0] - y, h + 2 * padding)
+            
+            hand_roi = screenshot[y:y+h, x:x+w]
+            
+            if hand_roi.size == 0:
+                logger.warning("Hand ROI is empty")
+                return 0.0
+            
+            # Detect orientation (hand is a pointing object)
+            orientation = self._detect_image_orientation(hand_roi, is_pointing_object=True)
+            logger.info(f"Detected hand direction: {orientation:.1f}°")
+            return orientation
+            
+        except Exception as e:
+            logger.error(f"Error detecting hand direction: {e}")
+            return 0.0
+    
+    def _detect_animal_direction(self, screenshot: np.ndarray, animal_element, parent_location: Dict = None) -> float:
+        """
+        Detect the direction the animal's face/nose is pointing using CV
+        
+        Args:
+            screenshot: Screenshot (element-relative if parent_location provided, page-relative otherwise)
+            animal_element: Selenium element for the animal image
+            parent_location: Optional location of parent element to adjust coordinates
+            
+        Returns:
+            Angle in degrees (0-360)
+        """
+        try:
+            # Get animal image location and size
+            location = animal_element.location
+            size = animal_element.size
+            
+            # Adjust coordinates if screenshot is element-relative
+            if parent_location:
+                x = int(location['x'] - parent_location['x'])
+                y = int(location['y'] - parent_location['y'])
+            else:
+                x = int(location['x'])
+                y = int(location['y'])
+            
+            w = int(size['width'])
+            h = int(size['height'])
+            
+            # Add some padding
+            padding = 10
+            x = max(0, x - padding)
+            y = max(0, y - padding)
+            w = min(screenshot.shape[1] - x, w + 2 * padding)
+            h = min(screenshot.shape[0] - y, h + 2 * padding)
+            
+            animal_roi = screenshot[y:y+h, x:x+w]
+            
+            if animal_roi.size == 0:
+                logger.warning("Animal ROI is empty")
+                return 0.0
+            
+            # Detect orientation (animal face direction)
+            orientation = self._detect_image_orientation(animal_roi, is_pointing_object=False)
+            logger.info(f"Detected animal direction: {orientation:.1f}°")
+            return orientation
+            
+        except Exception as e:
+            logger.error(f"Error detecting animal direction: {e}")
+            return 0.0
+    
+    def _direction_name_to_degrees(self, direction_name: str) -> float:
+        """Convert direction name to degrees (0° = North, clockwise)"""
+        direction_map = {
+            'North': 0,
+            'North East': 45,
+            'East': 90,
+            'South East': 135,
+            'South': 180,
+            'South West': 225,
+            'West': 270,
+            'North West': 315
+        }
+        return direction_map.get(direction_name, 0)
+    
+    def _drag_dial_to_angle(self, dial_element, target_angle: float) -> bool:
+        """
+        Drag the dial to a specific angle
+        
+        Args:
+            dial_element: The dial WebElement
+            target_angle: Target angle in degrees (0-360, 0° = North/Up)
+            
+        Returns:
+            True if successful
+        """
+        try:
+            # Get dial center and size
+            dial_location = dial_element.location
+            dial_size = dial_element.size
+            center_x = dial_location['x'] + dial_size['width'] / 2
+            center_y = dial_location['y'] + dial_size['height'] / 2
+            
+            # Calculate target point on dial circumference
+            radius = dial_size['width'] / 2 - 20  # Leave some margin from edge
+            # Convert angle to radians (0° = up, clockwise)
+            # Note: dial uses 0° = up, so we need to adjust
+            angle_rad = np.radians(target_angle)
+            # In screen coordinates: x increases right, y increases down
+            # For 0° = up: x = sin(angle), y = -cos(angle)
+            target_x = center_x + radius * np.sin(angle_rad)
+            target_y = center_y - radius * np.cos(angle_rad)
+            
+            logger.info(f"Dragging dial from center ({center_x:.1f}, {center_y:.1f}) to ({target_x:.1f}, {target_y:.1f}) for angle {target_angle}°")
+            
+            # Use ActionChains to drag
+            actions = ActionChains(self.driver)
+            actions.move_to_element(dial_element)
+            actions.click_and_hold()
+            
+            # Move to target position with intermediate steps for smoothness
+            steps = 20
+            for i in range(steps + 1):
+                t = i / steps
+                current_x = center_x + (target_x - center_x) * t
+                current_y = center_y + (target_y - center_y) * t
+                actions.move_by_offset(
+                    int(current_x - center_x) if i == 0 else int((target_x - center_x) / steps),
+                    int(current_y - center_y) if i == 0 else int((target_y - center_y) / steps)
+                )
+                if i == 0:
+                    # Reset offset for subsequent moves
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(dial_element)
+                    actions.click_and_hold()
+            
+            actions.release()
+            actions.perform()
+            
+            time.sleep(0.5)  # Wait for rotation to complete
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error dragging dial: {e}")
+            return False
+    
     def solve_rotation_puzzle(self, captcha_element) -> bool:
         """
-        Solve a rotation puzzle CAPTCHA
+        Solve a rotation puzzle CAPTCHA using computer vision
         
-        Strategy:
-        1. Detect target rotation (finger direction)
-        2. Detect current animal rotation
-        3. Calculate required rotation
-        4. Click rotation buttons to align (tracking state after each click)
-        5. Submit
+        Handles two types:
+        1. DialRotationCaptcha: Draggable dial that needs to match animal direction
+        2. AnimalRotationCaptcha: Buttons to rotate animal to match hand direction
         
         Args:
             captcha_element: Selenium WebElement containing the CAPTCHA
@@ -796,49 +1362,348 @@ class CVAttacker:
             True if solved successfully, False otherwise
         """
         try:
-            logger.info("Attempting to solve rotation puzzle...")
+            logger.info("Attempting to solve rotation puzzle using computer vision...")
             
-            # Reset behavior events for this puzzle
-            self.behavior_events = []
+            # Don't reset behavior events here - they're managed by start_new_session()
+            # self.behavior_events = []  # COMMENTED OUT - session handles this now
             start_time = time.time()
             last_event_time = start_time
             last_position = (0, 0)
             
             # Wait for page to load
-            time.sleep(1)
+            time.sleep(1.5)
             
-            # Get the target rotation from the finger image's transform
+            # Detect which type of rotation captcha this is
+            is_dial_captcha = False
             try:
-                finger_img = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-target")
-                finger_style = finger_img.get_attribute("style")
-                # Extract rotation from style: "transform: translateX(-50%) rotate(90deg)"
-                match = re.search(r'rotate\((\d+)deg\)', finger_style)
-                if match:
-                    target_rotation = int(match.group(1))
-                else:
-                    logger.error("Could not extract target rotation")
-                    return False
+                # Check for dial-specific elements
+                dial_element = captcha_element.find_element(By.CSS_SELECTOR, ".dial")
+                is_dial_captcha = True
+                logger.info("Detected DialRotationCaptcha (draggable dial)")
+            except:
+                logger.info("Detected AnimalRotationCaptcha (button-based)")
+            
+            if is_dial_captcha:
+                return self._solve_dial_rotation_captcha(captcha_element, start_time, last_event_time, last_position)
+            else:
+                return self._solve_animal_rotation_captcha(captcha_element, start_time, last_event_time, last_position)
+            
+        except Exception as e:
+            logger.error(f"Error solving rotation puzzle: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _solve_dial_rotation_captcha(self, captcha_element, start_time, last_event_time, last_position) -> bool:
+        """Solve the dial-based rotation captcha by detecting the animal nose direction"""
+        try:
+            logger.info("=== Starting Dial Rotation Captcha Solver ===")
+            
+            # Find dial and animal elements
+            try:
+                dial_element = captcha_element.find_element(By.CSS_SELECTOR, ".dial")
+                logger.info("✓ Found dial element")
             except Exception as e:
-                logger.error(f"Error finding target rotation: {e}")
+                logger.error(f"✗ Could not find dial element: {e}")
                 return False
             
-            # Find rotation buttons first
+            try:
+                animal_img = captcha_element.find_element(By.CSS_SELECTOR, ".target-animal")
+                logger.info("✓ Found animal image element")
+            except Exception as e:
+                logger.error(f"✗ Could not find animal image: {e}")
+                return False
+            
+            # Get current dial rotation from DOM
+            dial_style = dial_element.get_attribute("style")
+            current_dial_rotation = 0
+            match = re.search(r'rotate\(([-\d.]+)deg\)', dial_style)
+            if match:
+                current_dial_rotation = float(match.group(1)) % 360
+            logger.info(f"Current dial rotation: {current_dial_rotation}°")
+            
+            # Take a screenshot of the entire captcha area
+            try:
+                screenshot = self.take_screenshot(captcha_element)
+                logger.info(f"✓ Captured screenshot: {screenshot.shape}")
+            except Exception as e:
+                logger.error(f"✗ Failed to capture screenshot: {e}")
+                return False
+            
+            captcha_location = captcha_element.location
+            logger.info(f"Captcha location: {captcha_location}")
+            
+            # Detect the animal's nose direction using computer vision
+            logger.info("Analyzing animal image to detect nose direction...")
+            try:
+                target_dial_angle = self._detect_animal_direction(screenshot, animal_img, captcha_location)
+                if target_dial_angle is not None and target_dial_angle >= 0:
+                    logger.info(f"✓ Detected animal nose pointing direction: {target_dial_angle:.1f}°")
+                else:
+                    logger.error("✗ Detection returned invalid angle")
+                    return False
+            except Exception as e:
+                logger.error(f"✗ Error during animal direction detection: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+            
+            # Calculate rotation needed
+            rotation_needed = (target_dial_angle - current_dial_rotation) % 360
+            if rotation_needed > 180:
+                rotation_needed = rotation_needed - 360
+            
+            logger.info(f"Target dial angle: {target_dial_angle:.1f}°, Current: {current_dial_rotation:.1f}°, Need to rotate: {rotation_needed:.1f}°")
+            
+            # Drag the dial to the target angle using JavaScript to simulate mouse events
+            if abs(rotation_needed) > 1:  # Only rotate if significant change needed
+                logger.info(f"Rotating dial from {current_dial_rotation:.1f}° to {target_dial_angle:.1f}°")
+                
+                drag_success = False
+                try:
+                    # Use JavaScript to simulate the drag with proper React events
+                    logger.info("Simulating drag using JavaScript mouse events...")
+                    
+                    # Convert numpy float32 to Python float for JSON serialization
+                    target_angle_py = float(target_dial_angle)
+                    current_angle_py = float(current_dial_rotation)
+                    
+                    self.driver.execute_script("""
+                        var dial = arguments[0];
+                        var targetAngle = arguments[1];
+                        var currentAngle = arguments[2];
+                        
+                        // Get dial position and center
+                        var rect = dial.getBoundingClientRect();
+                        var centerX = rect.left + rect.width / 2;
+                        var centerY = rect.top + rect.height / 2;
+                        var radius = rect.width / 2 - 30;
+                        
+                        // Helper to calculate coordinates for an angle
+                        function getPointForAngle(angle) {
+                            var rad = angle * Math.PI / 180;
+                            return {
+                                x: centerX + radius * Math.sin(rad),
+                                y: centerY - radius * Math.cos(rad)
+                            };
+                        }
+                        
+                        // Start point
+                        var startPoint = getPointForAngle(currentAngle);
+                        
+                        // Fire mousedown event on dial
+                        var mouseDownEvent = new MouseEvent('mousedown', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            clientX: startPoint.x,
+                            clientY: startPoint.y,
+                            button: 0
+                        });
+                        dial.dispatchEvent(mouseDownEvent);
+                        
+                        // Calculate intermediate angles
+                        var steps = 15;
+                        var angleDelta = targetAngle - currentAngle;
+                        
+                        // Normalize angle delta to shortest path
+                        if (angleDelta > 180) angleDelta -= 360;
+                        if (angleDelta < -180) angleDelta += 360;
+                        
+                        // Simulate smooth dragging
+                        function simulateStep(step) {
+                            if (step > steps) {
+                                // Fire mouseup event to complete drag
+                                var endPoint = getPointForAngle(targetAngle);
+                                var mouseUpEvent = new MouseEvent('mouseup', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window,
+                                    clientX: endPoint.x,
+                                    clientY: endPoint.y,
+                                    button: 0
+                                });
+                                document.dispatchEvent(mouseUpEvent);
+                                return;
+                            }
+                            
+                            var t = step / steps;
+                            var currentStepAngle = currentAngle + angleDelta * t;
+                            var point = getPointForAngle(currentStepAngle);
+                            
+                            // Fire mousemove event on document (React listens to document events)
+                            var mouseMoveEvent = new MouseEvent('mousemove', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window,
+                                clientX: point.x,
+                                clientY: point.y,
+                                button: 0
+                            });
+                            document.dispatchEvent(mouseMoveEvent);
+                            
+                            // Continue to next step
+                            setTimeout(function() { simulateStep(step + 1); }, 50);
+                        }
+                        
+                        // Start the drag simulation
+                        setTimeout(function() { simulateStep(1); }, 100);
+                    """, dial_element, target_angle_py, current_angle_py)
+                    
+                    # Wait for the JavaScript animation to complete
+                    time.sleep((15 * 0.05) + 0.5)  # 15 steps * 50ms + buffer
+                    logger.info(f"✓ Completed drag simulation to {target_dial_angle}°")
+                    drag_success = True
+                    
+                except Exception as drag_e:
+                    logger.error(f"✗ JavaScript drag simulation failed: {drag_e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Verify final rotation
+            time.sleep(1.0)  # Give more time for React to update
+            final_style = dial_element.get_attribute("style")
+            final_rotation = 0
+            match = re.search(r'rotate\(([-\d.]+)deg\)', final_style)
+            if match:
+                final_rotation = float(match.group(1)) % 360
+            
+            logger.info(f"Final dial rotation: {final_rotation:.1f}° (target: {target_dial_angle:.1f}°)")
+            
+            # Check the degree display to verify
+            try:
+                degree_display = captcha_element.find_element(By.CSS_SELECTOR, ".degree-display")
+                displayed_angle = degree_display.text.replace('°', '').strip()
+                logger.info(f"Degree display shows: {displayed_angle}°")
+            except:
+                pass
+            
+            # Wait a moment before submitting to ensure state is updated
+            time.sleep(1.5)
+            
+            # Click submit button
+            try:
+                submit_button = captcha_element.find_element(By.CSS_SELECTOR, ".dial-captcha-button-submit, button[class*='submit']")
+                logger.info("Clicking submit button...")
+                submit_button.click()
+                time.sleep(2.5)  # Wait longer for result
+                
+                # Check for success message
+                try:
+                    success_msg = captcha_element.find_element(By.CSS_SELECTOR, ".dial-captcha-message-success")
+                    if success_msg and "✅" in success_msg.text:
+                        logger.info("✓ Dial rotation puzzle solved successfully!")
+                        return True
+                except:
+                    pass
+                
+                # Check for error message
+                try:
+                    error_msg = captcha_element.find_element(By.CSS_SELECTOR, ".dial-captcha-message-error")
+                    if error_msg:
+                        logger.warning("Dial rotation puzzle failed")
+                        return False
+                except:
+                    pass
+                
+                # If within tolerance, consider success
+                final_diff = abs((target_dial_angle - final_rotation) % 360)
+                if final_diff > 180:
+                    final_diff = 360 - final_diff
+                if final_diff <= 15:
+                    logger.info(f"Dial rotation within tolerance ({final_diff:.1f}°), considering success")
+                    return True
+                
+            except Exception as e:
+                logger.error(f"Error clicking submit: {e}")
+                return False
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error solving dial rotation captcha: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _solve_animal_rotation_captcha(self, captcha_element, start_time, last_event_time, last_position) -> bool:
+        """Solve the button-based animal rotation captcha"""
+        try:
+            # Take screenshot of the captcha area
+            screenshot = self.take_screenshot(captcha_element)
+            
+            # Get captcha element location for coordinate adjustment
+            captcha_location = captcha_element.location
+            
+            # Find hand and animal elements
+            try:
+                hand_img = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-target")
+                animal_img = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-animal")
+            except Exception as e:
+                logger.error(f"Error finding hand/animal elements: {e}")
+                return False
+            
+            # Try to get rotations from DOM first (more reliable)
+            target_rotation_dom = None
+            current_rotation_dom = None
+            
+            try:
+                hand_style = hand_img.get_attribute("style")
+                match = re.search(r'rotate\((\d+)deg\)', hand_style)
+                if match:
+                    target_rotation_dom = int(match.group(1))
+                    logger.info(f"Target rotation from DOM: {target_rotation_dom}°")
+            except:
+                pass
+            
+            try:
+                animal_style = animal_img.get_attribute("style")
+                match = re.search(r'rotate\((\d+)deg\)', animal_style)
+                if match:
+                    current_rotation_dom = int(match.group(1))
+                    logger.info(f"Current rotation from DOM: {current_rotation_dom}°")
+            except:
+                pass
+            
+            # Use DOM values if available, otherwise use CV
+            if target_rotation_dom is not None and current_rotation_dom is not None:
+                target_direction = target_rotation_dom
+                current_direction = current_rotation_dom
+                logger.info("Using DOM values for rotation calculation")
+            else:
+                # Detect directions using computer vision
+                # Pass captcha_location to adjust coordinates (screenshot is element-relative, locations are page-relative)
+                target_direction = self._detect_hand_direction(screenshot, hand_img, captcha_location)
+                current_direction = self._detect_animal_direction(screenshot, animal_img, captcha_location)
+                
+                logger.info(f"Hand pointing direction (CV): {target_direction:.1f}°")
+                logger.info(f"Animal facing direction (CV): {current_direction:.1f}°")
+            
+            # Calculate rotation needed
+            # We want the animal to face the same direction as the hand
+            # So we need to rotate the animal by (target - current)
+            rotation_needed = (target_direction - current_direction) % 360
+            if rotation_needed > 180:
+                rotation_needed = rotation_needed - 360
+            
+            logger.info(f"Rotation needed: {rotation_needed:.1f}°")
+            
+            # Find rotation buttons
             try:
                 buttons = captcha_element.find_elements(By.CSS_SELECTOR, ".rotation-captcha-button")
                 if len(buttons) < 2:
                     logger.error("Could not find rotation buttons")
                     return False
-                # First button is left (←), second is right (→)
+                # First button is left (←, -15°), second is right (→, +15°)
                 left_button = buttons[0]
                 right_button = buttons[1]
             except Exception as e:
                 logger.error(f"Error finding rotation buttons: {e}")
                 return False
             
-            # Get current animal rotation and track it
-            def get_current_rotation():
+            # Helper to get current rotation from DOM (for verification)
+            def get_current_rotation_dom():
                 try:
-                    animal_img = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-animal")
                     animal_style = animal_img.get_attribute("style")
                     match = re.search(r'rotate\((\d+)deg\)', animal_style)
                     if match:
@@ -847,38 +1712,29 @@ class CVAttacker:
                 except:
                     return 0
             
-            current_rotation = get_current_rotation()
-            logger.info(f"Target rotation: {target_rotation}°, Current: {current_rotation}°")
+            # Calculate number of button clicks needed (each click rotates 15°)
+            clicks_needed = int(round(abs(rotation_needed) / 15))
+            if clicks_needed == 0:
+                clicks_needed = 1 if abs(rotation_needed) > 0 else 0
             
-            # Calculate required rotation
-            diff = (target_rotation - current_rotation) % 360
-            if diff > 180:
-                diff = diff - 360
+            logger.info(f"Need to click {clicks_needed} times ({'right' if rotation_needed > 0 else 'left'})")
             
-            logger.info(f"Rotation needed: {diff}°")
+            # Get initial rotation before clicking
+            initial_rotation_before = get_current_rotation_dom()
+            logger.info(f"Initial animal rotation: {initial_rotation_before}°")
             
-            # Rotate in steps of 15 degrees, tracking state after each click
-            max_attempts = 24  # Maximum rotations (360/15)
-            attempts = 0
-            
-            while attempts < max_attempts:
-                current_rotation = get_current_rotation()
-                remaining_diff = (target_rotation - current_rotation) % 360
-                if remaining_diff > 180:
-                    remaining_diff = remaining_diff - 360
-                
-                # Check if we're within tolerance (15 degrees)
-                if abs(remaining_diff) <= 15:
-                    logger.info(f"Rotation aligned! Current: {current_rotation}°, Target: {target_rotation}°")
-                    break
+            # Perform rotations
+            for i in range(clicks_needed):
+                # Get rotation before this click
+                rotation_before = get_current_rotation_dom()
                 
                 # Determine which button to click
-                if remaining_diff > 0:
+                if rotation_needed > 0:
                     button_to_click = right_button
-                    logger.info(f"Clicking right button (remaining: {remaining_diff}°)")
+                    direction = "right"
                 else:
                     button_to_click = left_button
-                    logger.info(f"Clicking left button (remaining: {remaining_diff}°)")
+                    direction = "left"
                 
                 # Get button location for behavior tracking
                 button_location = button_to_click.location
@@ -887,7 +1743,7 @@ class CVAttacker:
                 button_y = button_location['y'] + button_size['height'] / 2
                 
                 # Record mousedown event
-                if self.use_model_classification:
+                if self.use_model_classification or self.save_behavior_data:
                     current_time = time.time()
                     time_since_start = (current_time - start_time) * 1000
                     time_since_last = (current_time - last_event_time) * 1000
@@ -896,12 +1752,60 @@ class CVAttacker:
                     last_position = (button_x, button_y)
                     last_event_time = current_time
                 
-                # Click and wait for state update
-                button_to_click.click()
-                time.sleep(0.2)  # Wait for React state update
+                # Try multiple methods to click the button
+                rotation_changed = False
+                
+                # Method 1: Use JavaScript to directly trigger mousedown (most reliable for React)
+                try:
+                    self.driver.execute_script("""
+                        var event = new MouseEvent('mousedown', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            button: 0
+                        });
+                        arguments[0].dispatchEvent(event);
+                    """, button_to_click)
+                    time.sleep(0.3)
+                    rotation_after = get_current_rotation_dom()
+                    if abs(rotation_after - rotation_before) >= 1:
+                        rotation_changed = True
+                        logger.info(f"✓ Clicked {direction} button ({i+1}/{clicks_needed}) via JS - rotation: {rotation_before}° → {rotation_after}°")
+                except Exception as js_e:
+                    logger.debug(f"JavaScript click failed: {js_e}")
+                
+                # Method 2: Use ActionChains if JS didn't work
+                if not rotation_changed:
+                    try:
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(button_to_click)
+                        actions.click_and_hold()
+                        actions.release()
+                        actions.perform()
+                        time.sleep(0.3)
+                        rotation_after = get_current_rotation_dom()
+                        if abs(rotation_after - rotation_before) >= 1:
+                            rotation_changed = True
+                            logger.info(f"✓ Clicked {direction} button ({i+1}/{clicks_needed}) via ActionChains - rotation: {rotation_before}° → {rotation_after}°")
+                    except Exception as ac_e:
+                        logger.debug(f"ActionChains failed: {ac_e}")
+                
+                # Method 3: Fallback to regular click
+                if not rotation_changed:
+                    try:
+                        button_to_click.click()
+                        time.sleep(0.3)
+                        rotation_after = get_current_rotation_dom()
+                        if abs(rotation_after - rotation_before) >= 1:
+                            rotation_changed = True
+                            logger.info(f"✓ Clicked {direction} button ({i+1}/{clicks_needed}) via regular click - rotation: {rotation_before}° → {rotation_after}°")
+                        else:
+                            logger.warning(f"✗ Click {i+1} didn't change rotation (still {rotation_after}°)")
+                    except Exception as click_e:
+                        logger.error(f"Regular click failed: {click_e}")
                 
                 # Record mouseup event
-                if self.use_model_classification:
+                if self.use_model_classification or self.save_behavior_data:
                     current_time = time.time()
                     time_since_start = (current_time - start_time) * 1000
                     time_since_last = (current_time - last_event_time) * 1000
@@ -909,24 +1813,47 @@ class CVAttacker:
                                      time_since_last, last_position)
                     last_position = (button_x, button_y)
                     last_event_time = current_time
-                
-                # Verify rotation changed
-                new_rotation = get_current_rotation()
-                if new_rotation == current_rotation:
-                    logger.warning(f"Rotation did not change after click (still {current_rotation}°)")
-                    time.sleep(0.3)  # Wait longer and try again
-                    new_rotation = get_current_rotation()
-                
-                logger.info(f"Rotation after click: {new_rotation}°")
-                attempts += 1
             
-            # Final check
-            current_rotation = get_current_rotation()
-            final_diff = abs((target_rotation - current_rotation) % 360)
+            # Verify final rotation using CV again
+            time.sleep(0.5)  # Wait for final rotation to complete
+            final_screenshot = self.take_screenshot(captcha_element)
+            final_animal_direction = self._detect_animal_direction(final_screenshot, animal_img, captcha_location)
+            final_diff = abs((target_direction - final_animal_direction) % 360)
             if final_diff > 180:
                 final_diff = 360 - final_diff
             
-            logger.info(f"Final rotation: {current_rotation}°, Target: {target_rotation}°, Diff: {final_diff}°")
+            logger.info(f"Final animal direction: {final_animal_direction:.1f}°, Target: {target_direction:.1f}°, Diff: {final_diff:.1f}°")
+            
+            # If still not aligned, try fine-tuning
+            if final_diff > 15:
+                logger.info("Fine-tuning rotation...")
+                for _ in range(2):  # Try up to 2 more clicks
+                    if final_diff > 15:
+                        if (target_direction - final_animal_direction) % 360 > 180:
+                            button_to_click = left_button
+                            direction = "left"
+                        else:
+                            button_to_click = right_button
+                            direction = "right"
+                        
+                        # Use ActionChains for fine-tuning clicks too
+                        try:
+                            actions = ActionChains(self.driver)
+                            actions.move_to_element(button_to_click)
+                            actions.click_and_hold()
+                            actions.release()
+                            actions.perform()
+                        except:
+                            button_to_click.click()
+                        time.sleep(0.4)
+                        
+                        # Re-check
+                        final_screenshot = self.take_screenshot(captcha_element)
+                        final_animal_direction = self._detect_animal_direction(final_screenshot, animal_img, captcha_location)
+                        final_diff = abs((target_direction - final_animal_direction) % 360)
+                        if final_diff > 180:
+                            final_diff = 360 - final_diff
+                        logger.info(f"After fine-tune: {final_animal_direction:.1f}°, Diff: {final_diff:.1f}°")
             
             # Click submit button
             try:
@@ -938,7 +1865,7 @@ class CVAttacker:
                 submit_x = submit_location['x'] + submit_size['width'] / 2
                 submit_y = submit_location['y'] + submit_size['height'] / 2
                 
-                if self.use_model_classification:
+                if self.use_model_classification or self.save_behavior_data:
                     current_time = time.time()
                     time_since_start = (current_time - start_time) * 1000
                     time_since_last = (current_time - last_event_time) * 1000
@@ -950,7 +1877,7 @@ class CVAttacker:
                 submit_button.click()
                 logger.info("Clicked submit button")
                 
-                if self.use_model_classification:
+                if self.use_model_classification or self.save_behavior_data:
                     current_time = time.time()
                     time_since_start = (current_time - start_time) * 1000
                     time_since_last = (current_time - last_event_time) * 1000
@@ -962,7 +1889,7 @@ class CVAttacker:
                 return False
             
             # Wait and check for success message
-            time.sleep(1.5)
+            time.sleep(2)
             try:
                 message_element = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-message-success")
                 if message_element and ("✅" in message_element.text or "Passed" in message_element.text):
@@ -979,6 +1906,11 @@ class CVAttacker:
                     return False
             except:
                 pass
+            
+            # If we got close enough (within tolerance), consider it success
+            if final_diff <= 15:
+                logger.info(f"Rotation within tolerance ({final_diff:.1f}°), considering success")
+                return True
             
             logger.warning("Could not verify rotation puzzle success")
             return False
@@ -1064,6 +1996,406 @@ class CVAttacker:
         # TODO: Implement piece placement detection and solving
         return False
     
+    def detect_and_identify_sliding_animal(self, duration: float = 10.0) -> Optional[str]:
+        """
+        Monitor for a sliding/flying animal and identify it from the DOM/image
+        
+        Args:
+            duration: How long to monitor for the flying object (seconds)
+            
+        Returns:
+            Name of the detected animal/object, or None if not detected
+        """
+        logger.info(f"🔍 Starting flying animal detection for {duration} seconds...")
+        start_time = time.time()
+        detected_animal = None
+        check_count = 0
+        
+        try:
+            while time.time() - start_time < duration:
+                check_count += 1
+                elapsed = time.time() - start_time
+                
+                # Check if driver is still active
+                if not self.driver:
+                    logger.warning("Driver is not available, stopping animal detection")
+                    break
+                
+                # Try multiple methods to find the flying animal
+                
+                # Method 1: Find by alt text
+                try:
+                    flying_imgs = self.driver.find_elements(By.XPATH, "//img[@alt='Flying animal']")
+                    
+                    if flying_imgs:
+                        logger.info(f"📍 Found {len(flying_imgs)} flying animal elements")
+                        for img in flying_imgs:
+                            try:
+                                # Check if element is visible/displayed
+                                is_displayed = img.is_displayed()
+                                src = img.get_attribute('src')
+                                logger.info(f"  Image src: {src}, displayed: {is_displayed}")
+                                
+                                # Handle both URL-encoded and regular paths
+                                if src and ('Flying Animals' in src or 'Flying%20Animals' in src):
+                                    # Decode URL-encoded filename
+                                    import urllib.parse
+                                    decoded_src = urllib.parse.unquote(src)
+                                    filename = decoded_src.split('/')[-1]
+                                    logger.info(f"  Filename: {filename}")
+                                    
+                                    # Extract animal name
+                                    if 'Turtle' in filename:
+                                        animal_name = 'Turtle'
+                                    elif 'Flamingo' in filename:
+                                        animal_name = 'Flamingo'
+                                    elif 'Panda' in filename:
+                                        animal_name = 'Panda'
+                                    elif 'Chipmunk' in filename:
+                                        animal_name = 'Chipmunk'
+                                    elif 'Chicken' in filename:
+                                        animal_name = 'Chicken'
+                                    else:
+                                        # Extract first word from filename
+                                        animal_name = filename.split()[0]
+                                    
+                                    logger.info(f"✅ DETECTED AND SAVED flying animal: {animal_name}")
+                                    detected_animal = animal_name
+                                    self.detected_sliding_animal = animal_name
+                                    return animal_name
+                            except Exception as img_e:
+                                logger.debug(f"  Error processing image: {img_e}")
+                                continue
+                except Exception as dom_e:
+                    if check_count % 10 == 0:  # Log every 10th attempt
+                        logger.debug(f"[{elapsed:.1f}s] DOM detection attempt #{check_count}: {dom_e}")
+                
+                # Method 2: Find by partial path (any img with Flying Animals in src)
+                try:
+                    all_imgs = self.driver.find_elements(By.TAG_NAME, "img")
+                    for img in all_imgs:
+                        try:
+                            src = img.get_attribute('src')
+                            # Handle both URL-encoded and regular paths
+                            if src and ('Flying Animals' in src or 'Flying%20Animals' in src):
+                                logger.info(f"📍 Found Flying Animals image via src scan: {src}")
+                                
+                                # Decode URL-encoded filename
+                                import urllib.parse
+                                decoded_src = urllib.parse.unquote(src)
+                                filename = decoded_src.split('/')[-1]
+                                
+                                if 'Turtle' in filename:
+                                    animal_name = 'Turtle'
+                                elif 'Flamingo' in filename:
+                                    animal_name = 'Flamingo'
+                                elif 'Panda' in filename:
+                                    animal_name = 'Panda'
+                                elif 'Chipmunk' in filename:
+                                    animal_name = 'Chipmunk'
+                                elif 'Chicken' in filename:
+                                    animal_name = 'Chicken'
+                                else:
+                                    animal_name = filename.split()[0]
+                                
+                                logger.info(f"✅ DETECTED AND SAVED flying animal from src scan: {animal_name}")
+                                detected_animal = animal_name
+                                self.detected_sliding_animal = animal_name
+                                return animal_name
+                        except:
+                            continue
+                except Exception as scan_e:
+                    if check_count % 10 == 0:
+                        logger.debug(f"[{elapsed:.1f}s] Src scan failed: {scan_e}")
+                
+                time.sleep(0.2)  # Check 5 times per second
+            
+            logger.warning(f"❌ No flying animal detected after {check_count} checks over {duration} seconds")
+            
+        except Exception as e:
+            logger.error(f"❌ Error detecting flying animal: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return detected_animal
+    
+    def _identify_animal_in_image(self, image: np.ndarray) -> Optional[str]:
+        """
+        Identify what animal/object is in an image using basic CV
+        
+        Args:
+            image: Image as numpy array
+            
+        Returns:
+            Name of the animal/object, or None
+        """
+        try:
+            # Common animals that might appear
+            animal_keywords = [
+                'turtle', 'tortoise',
+                'chipmunk', 'squirrel',
+                'rabbit', 'bunny',
+                'dog', 'puppy',
+                'cat', 'kitten',
+                'bird', 'duck',
+                'fish', 'goldfish',
+                'frog', 'toad',
+                'horse', 'pony',
+                'cow', 'bull',
+                'pig', 'piglet',
+                'sheep', 'lamb',
+                'elephant',
+                'giraffe',
+                'zebra',
+                'lion',
+                'tiger',
+                'bear',
+                'panda',
+                'monkey',
+                'penguin'
+            ]
+            
+            # For now, use basic image analysis
+            # In a production system, you'd use a pre-trained image classification model
+            # like ResNet, MobileNet, etc.
+            
+            # Calculate basic features
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            edges = cv2.Canny(gray, 50, 150)
+            edge_density = np.sum(edges > 0) / edges.size
+            
+            # Check color histograms
+            hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+            hist_hue = cv2.calcHist([hsv], [0], None, [180], [0, 180])
+            dominant_hue = np.argmax(hist_hue)
+            
+            # Simple heuristics (this is a placeholder - in reality you'd use ML)
+            # Brown/green tones might be turtle
+            if 15 < dominant_hue < 45 and edge_density < 0.3:
+                return 'turtle'
+            # Gray/brown with more edges might be chipmunk
+            elif edge_density > 0.2:
+                return 'chipmunk'
+            
+            # For now, return 'unknown' - this should be replaced with actual ML model
+            logger.debug(f"Could not identify animal (hue: {dominant_hue}, edges: {edge_density:.3f})")
+            return 'unknown'
+            
+        except Exception as e:
+            logger.error(f"Error identifying animal: {e}")
+            return None
+    
+    def click_skip_button(self) -> bool:
+        """
+        Find and click a skip button on the current page
+        
+        Returns:
+            True if skip button was found and clicked, False otherwise
+        """
+        try:
+            # Try various skip button selectors (most specific first)
+            skip_selectors = [
+                ".dial-captcha-button-skip",  # Dial rotation captcha skip button
+                "button[class*='skip' i]",
+                "button[id*='skip' i]",
+                ".skip-button",
+                "#skip-button",
+                "//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'skip')]",
+                "//a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'skip')]"
+            ]
+            
+            for selector in skip_selectors:
+                try:
+                    if selector.startswith("//"):
+                        # XPath selector
+                        skip_button = self.driver.find_element(By.XPATH, selector)
+                    else:
+                        skip_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    
+                    if skip_button and skip_button.is_displayed() and skip_button.is_enabled():
+                        logger.info(f"✓ Found skip button with selector: {selector}")
+                        skip_button.click()
+                        time.sleep(1.5)  # Wait for navigation
+                        logger.info("✓ Skip button clicked successfully")
+                        return True
+                except Exception as e:
+                    logger.debug(f"Selector {selector} failed: {e}")
+                    continue
+            
+            logger.warning("✗ No skip button found")
+            return False
+            
+        except Exception as e:
+            logger.error(f"✗ Error clicking skip button: {e}")
+            return False
+    
+    def solve_third_captcha(self, captcha_element=None) -> bool:
+        """
+        Solve the third captcha that asks what animal was seen flying
+        
+        Args:
+            captcha_element: The captcha container element (optional)
+            
+        Returns:
+            True if solved successfully, False otherwise
+        """
+        try:
+            logger.info("=== Solving Third Captcha (Animal Identification) ===")
+            
+            if not self.detected_sliding_animal:
+                logger.error("✗ No flying animal was detected during second captcha!")
+                logger.info("📋 Attempting to find available options anyway...")
+                
+                # Initialize timing for minimal event tracking
+                start_time = time.time()
+                last_event_time = start_time
+                last_position = (0, 0)
+                
+                # Try to list available options and maybe record a click anyway
+                try:
+                    time.sleep(2)
+                    animal_options = self.driver.find_elements(By.XPATH, "//div[contains(@style, 'cursor: pointer')]//p")
+                    if animal_options:
+                        logger.info(f"Found {len(animal_options)} animal options:")
+                        for opt in animal_options:
+                            logger.info(f"  - {opt.text}")
+                        logger.warning("❌ But we don't know which one is correct - detection failed")
+                        
+                        # Click a random option just to generate some behavior data
+                        if animal_options and len(animal_options) > 0:
+                            random_option = animal_options[0].find_element(By.XPATH, "..")
+                            option_location = random_option.location
+                            option_size = random_option.size
+                            option_x = option_location['x'] + option_size['width'] / 2
+                            option_y = option_location['y'] + option_size['height'] / 2
+                            
+                            # Record mousedown event
+                            if self.use_model_classification or self.save_behavior_data:
+                                current_time = time.time()
+                                time_since_start = (current_time - start_time) * 1000
+                                time_since_last = (current_time - last_event_time) * 1000
+                                self._record_event('mousedown', option_x, option_y, time_since_start, 
+                                                 time_since_last, last_position)
+                                last_position = (option_x, option_y)
+                                last_event_time = current_time
+                            
+                            random_option.click()
+                            
+                            # Record mouseup event
+                            if self.use_model_classification or self.save_behavior_data:
+                                current_time = time.time()
+                                time_since_start = (current_time - start_time) * 1000
+                                time_since_last = (current_time - last_event_time) * 1000
+                                self._record_event('mouseup', option_x, option_y, time_since_start, 
+                                                 time_since_last, last_position)
+                            
+                            logger.info("Clicked first option as fallback (will fail, but generates data)")
+                            time.sleep(1)
+                except Exception as e:
+                    logger.error(f"Could not even list options: {e}")
+                
+                return False
+            
+            logger.info(f"🎯 Using detected animal: {self.detected_sliding_animal}")
+            
+            # Initialize timing for event tracking
+            start_time = time.time()
+            last_event_time = start_time
+            last_position = (0, 0)
+            
+            # Wait for the animal selection page to load
+            time.sleep(2)
+            
+            # The AnimalSelectionPage uses clickable divs with animal names as <p> text
+            try:
+                # Look for a div containing a <p> with the animal name
+                animal_option = self.driver.find_element(
+                    By.XPATH,
+                    f"//p[text()='{self.detected_sliding_animal}']/.."
+                )
+                
+                logger.info(f"✓ Found animal option for '{self.detected_sliding_animal}', clicking...")
+                
+                # Get option location for behavior tracking
+                option_location = animal_option.location
+                option_size = animal_option.size
+                option_x = option_location['x'] + option_size['width'] / 2
+                option_y = option_location['y'] + option_size['height'] / 2
+                
+                # Record mousedown event
+                if self.use_model_classification or self.save_behavior_data:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mousedown', option_x, option_y, time_since_start, 
+                                     time_since_last, last_position)
+                    last_position = (option_x, option_y)
+                    last_event_time = current_time
+                
+                animal_option.click()
+                
+                # Record mouseup event
+                if self.use_model_classification or self.save_behavior_data:
+                    current_time = time.time()
+                    time_since_start = (current_time - start_time) * 1000
+                    time_since_last = (current_time - last_event_time) * 1000
+                    self._record_event('mouseup', option_x, option_y, time_since_start, 
+                                     time_since_last, last_position)
+                
+                time.sleep(2)
+                
+                # Check for success message
+                try:
+                    success_check = self.driver.find_element(
+                        By.XPATH,
+                        "//h2[contains(text(), 'You are Human')]"
+                    )
+                    if success_check:
+                        logger.info("✓ Third captcha solved successfully! Identified as Human!")
+                        return True
+                except:
+                    pass
+                
+                # Check if we were identified as robot
+                try:
+                    robot_check = self.driver.find_element(
+                        By.XPATH,
+                        "//h2[contains(text(), 'You are a Robot')]"
+                    )
+                    if robot_check:
+                        logger.warning("✗ Third captcha failed - identified as Robot")
+                        return False
+                except:
+                    pass
+                
+                # If we clicked but can't determine result, assume success
+                logger.info("Clicked animal option, result unclear - assuming success")
+                return True
+                
+            except Exception as e:
+                logger.error(f"✗ Could not find or click animal option for '{self.detected_sliding_animal}': {e}")
+                
+                # Try alternative selector (case-insensitive)
+                try:
+                    animal_option = self.driver.find_element(
+                        By.XPATH,
+                        f"//p[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{self.detected_sliding_animal.lower()}')]/.."
+                    )
+                    logger.info(f"✓ Found animal option (case-insensitive), clicking...")
+                    animal_option.click()
+                    time.sleep(2)
+                    return True
+                except:
+                    pass
+                
+                return False
+                
+        except Exception as e:
+            logger.error(f"✗ Error solving third captcha: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     def attack_captcha(self, url: str, captcha_selector: str = ".custom-slider-captcha") -> Dict:
         """
         Main attack method - attempts to solve multiple CAPTCHAs on a webpage
@@ -1087,8 +2419,9 @@ class CVAttacker:
         }
         
         try:
-            logger.info(f"Navigating to {url}")
-            self.driver.get(url)
+            attack_url = self._with_attack_mode(url)
+            logger.info(f"Navigating to {attack_url}")
+            self.driver.get(attack_url)
             time.sleep(self.wait_time)
             
             # ===== SOLVE SLIDER PUZZLE =====
@@ -1100,6 +2433,9 @@ class CVAttacker:
             slider_classification = None
             
             try:
+                # Start new session for slider captcha
+                self.start_new_session('captcha1')
+                
                 # Find slider CAPTCHA element
                 slider_element = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, captcha_selector))
@@ -1113,6 +2449,10 @@ class CVAttacker:
                 # Solve slider puzzle
                 slider_success = self.solve_slider_puzzle(slider_element)
                 result['slider_result'] = {'success': slider_success}
+                
+                # Save bot behavior data to CSV
+                if self.save_behavior_data:
+                    self.save_behavior_to_csv('captcha1', slider_success)
                 
                 # Classify slider behavior
                 if self.use_model_classification:
@@ -1166,21 +2506,68 @@ class CVAttacker:
                     # Fallback: Try direct URL navigation if button not found
                     logger.warning("Navigation button not found, trying direct URL navigation")
                     rotation_url = url.rstrip('/') + '/rotation-captcha'
+                    rotation_url = self._with_attack_mode(rotation_url)
                     logger.info(f"Navigating to: {rotation_url}")
                     self.driver.get(rotation_url)
                     time.sleep(self.wait_time)
                 
-                # Reset behavior events for rotation puzzle
-                self.behavior_events = []
+                # Start new session for rotation puzzle
+                self.start_new_session('captcha2')
                 
-                # Find rotation CAPTCHA element
-                rotation_element = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, ".rotation-captcha-container"))
+                # Find rotation CAPTCHA element (try both types)
+                try:
+                    rotation_element = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, ".dial-rotation-captcha-container, .rotation-captcha-container"))
+                    )
+                except:
+                    # Try individual selectors
+                    try:
+                        rotation_element = self.driver.find_element(By.CSS_SELECTOR, ".dial-rotation-captcha-container")
+                    except:
+                        rotation_element = self.driver.find_element(By.CSS_SELECTOR, ".rotation-captcha-container")
+                
+                # Start monitoring for flying animal in a separate thread
+                import threading
+                animal_detection_thread = threading.Thread(
+                    target=self.detect_and_identify_sliding_animal,
+                    args=(15,),  # Monitor for 15 seconds (longer to catch the animal)
+                    daemon=False  # Ensure it completes
                 )
+                animal_detection_thread.start()
+                logger.info("🎬 Started background monitoring for flying animal...")
+                
+                # Give the animal some time to appear before solving
+                time.sleep(2)
                 
                 # Solve rotation puzzle
                 rotation_success = self.solve_rotation_puzzle(rotation_element)
                 result['rotation_result'] = {'success': rotation_success}
+                
+                # If rotation puzzle failed, try to skip
+                if not rotation_success:
+                    logger.warning("⚠️ Rotation puzzle failed, attempting to skip...")
+                    if self.click_skip_button():
+                        logger.info("✓ Successfully clicked skip button")
+                        time.sleep(2)  # Wait for navigation
+                    else:
+                        logger.warning("⚠️ Could not find or click skip button")
+                else:
+                    logger.info("✓ Rotation puzzle solved, waiting for navigation...")
+                    time.sleep(2)
+                
+                # Wait for animal detection thread to finish (give it enough time)
+                logger.info("⏳ Waiting for animal detection to complete...")
+                animal_detection_thread.join(timeout=18)
+                if animal_detection_thread.is_alive():
+                    logger.warning("⚠️ Animal detection thread is still running after timeout")
+                else:
+                    logger.info("✓ Animal detection completed")
+                
+                # Log what we detected
+                if self.detected_sliding_animal:
+                    logger.info(f"🎯 Detected animal: {self.detected_sliding_animal}")
+                else:
+                    logger.warning("⚠️ No animal was detected during monitoring")
                 
                 # Classify rotation behavior
                 if self.use_model_classification:
@@ -1190,21 +2577,119 @@ class CVAttacker:
                         logger.info(f"\nROTATION - ML Classification: {rotation_classification['decision']} "
                                   f"(probability: {rotation_classification['prob_human']:.3f})")
                 
-                # Overall success if both solved
-                result['success'] = slider_success and rotation_success
-                
-                # Overall model classification (use the most recent, or combine if needed)
-                if self.use_model_classification:
-                    if rotation_classification:
-                        result['model_classification'] = rotation_classification
-                    elif slider_classification:
-                        result['model_classification'] = slider_classification
-                
             except Exception as e:
                 logger.error(f"Error solving rotation puzzle: {e}")
                 result['rotation_result'] = {'success': False, 'error': str(e)}
                 import traceback
                 traceback.print_exc()
+                # Try to skip if rotation failed
+                rotation_success = False
+                self.click_skip_button()
+            
+            # Save rotation behavior data (after try-except so it always runs)
+            if self.save_behavior_data:
+                self.save_behavior_to_csv('captcha2', rotation_success)
+            
+            # ===== SOLVE THIRD CAPTCHA (ANIMAL IDENTIFICATION) =====
+            logger.info("\n" + "="*60)
+            logger.info("ATTEMPTING THIRD CAPTCHA (ANIMAL IDENTIFICATION)")
+            logger.info("="*60)
+            
+            third_captcha_success = False
+            
+            try:
+                # Start new session for third captcha
+                self.start_new_session('captcha3')
+                
+                # Wait a moment for any navigation to complete
+                time.sleep(3)
+                
+                # Check current URL
+                current_url = self.driver.current_url
+                logger.info(f"📍 Current URL: {current_url}")
+                
+                # Check if we detected a flying animal
+                logger.info(f"🔍 Detected animal status: {self.detected_sliding_animal or 'None'}")
+                
+                if self.detected_sliding_animal:
+                    logger.info(f"✓ We have detected animal: {self.detected_sliding_animal}")
+                    
+                    # Check if we're on the animal selection page
+                    try:
+                        # Wait for the question text to appear
+                        question = WebDriverWait(self.driver, 8).until(
+                            EC.presence_of_element_located((By.XPATH, "//p[contains(text(), 'Which floating animal did you see')]"))
+                        )
+                        logger.info("✓ Found animal selection page - question is visible")
+                        
+                        # Solve the third captcha
+                        third_captcha_success = self.solve_third_captcha()
+                        result['third_captcha_result'] = {'success': third_captcha_success, 'animal': self.detected_sliding_animal}
+                        
+                        # Save bot behavior data to CSV (mark that we saved)
+                        if self.save_behavior_data:
+                            self.save_behavior_to_csv('captcha3', third_captcha_success)
+                            self.current_captcha_id = None  # Mark as saved
+                        
+                        if third_captcha_success:
+                            logger.info("✓ Third captcha solved successfully!")
+                        else:
+                            logger.warning("❌ Third captcha failed")
+                        
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not confirm animal selection page: {e}")
+                        logger.info("Attempting to solve anyway...")
+                        
+                        # Try to solve anyway in case page is already loaded
+                        third_captcha_success = self.solve_third_captcha()
+                        result['third_captcha_result'] = {'success': third_captcha_success, 'error': 'Page not confirmed', 'animal': self.detected_sliding_animal}
+                        
+                        # Save bot behavior data to CSV (mark that we saved)
+                        if self.save_behavior_data:
+                            self.save_behavior_to_csv('captcha3', third_captcha_success)
+                            self.current_captcha_id = None  # Mark as saved
+                else:
+                    logger.error("❌ No flying animal was detected, cannot solve third captcha")
+                    logger.info("🔍 Checking if we're on the animal selection page anyway...")
+                    
+                    # Still try to attempt it - maybe detection failed but we can guess
+                    try:
+                        question = self.driver.find_element(By.XPATH, "//p[contains(text(), 'Which floating animal did you see')]")
+                        if question:
+                            logger.info("✓ We ARE on the animal selection page, but don't know the answer")
+                            # List available options
+                            third_captcha_success = self.solve_third_captcha()  # Will show options
+                            result['third_captcha_result'] = {'success': False, 'error': 'No animal detected'}
+                            
+                            # Save bot behavior data to CSV (mark that we saved)
+                            if self.save_behavior_data:
+                                self.save_behavior_to_csv('captcha3', False)
+                                self.current_captcha_id = None  # Mark as saved
+                    except:
+                        logger.info("❌ Not on animal selection page either")
+                        result['third_captcha_result'] = {'success': False, 'error': 'No animal detected'}
+                    
+            except Exception as e:
+                logger.error(f"❌ Error with third captcha: {e}")
+                result['third_captcha_result'] = {'success': False, 'error': str(e)}
+                import traceback
+                traceback.print_exc()
+            
+            # Save third captcha behavior data (after try-except so it always runs if we attempted it)
+            # Only save if we actually started a session for captcha3
+            if self.save_behavior_data and self.current_captcha_id == 'captcha3':
+                logger.info("💾 Saving third captcha data from exception handler...")
+                self.save_behavior_to_csv('captcha3', third_captcha_success)
+            
+            # Overall success if all solved
+            result['success'] = slider_success and (rotation_success or third_captcha_success)
+            
+            # Overall model classification (use the most recent, or combine if needed)
+            if self.use_model_classification:
+                if rotation_classification:
+                    result['model_classification'] = rotation_classification
+                elif slider_classification:
+                    result['model_classification'] = slider_classification
             
             result['attempts'] = 1
             
@@ -1238,34 +2723,6 @@ def main():
         print(f"Overall Success: {'✓ YES' if result['success'] else '✗ NO'}")
         print(f"Puzzle Type: {result['puzzle_type']}")
         print(f"Attempts: {result['attempts']}")
-        
-        if result.get('slider_result'):
-            print("\n" + "-"*60)
-            print("SLIDER PUZZLE RESULTS")
-            print("-"*60)
-            print(f"Solved: {'✓ YES' if result['slider_result']['success'] else '✗ NO'}")
-            if result['slider_result'].get('model_classification'):
-                sc = result['slider_result']['model_classification']
-                print(f"ML: {sc['decision'].upper()} (prob: {sc['prob_human']:.3f})")
-        
-        if result.get('rotation_result'):
-            print("\n" + "-"*60)
-            print("ROTATION PUZZLE RESULTS")
-            print("-"*60)
-            print(f"Solved: {'✓ YES' if result['rotation_result']['success'] else '✗ NO'}")
-            if result['rotation_result'].get('model_classification'):
-                rc = result['rotation_result']['model_classification']
-                print(f"ML: {rc['decision'].upper()} (prob: {rc['prob_human']:.3f})")
-        
-        if result.get('model_classification'):
-            classification = result['model_classification']
-            print("\n" + "-"*60)
-            print("OVERALL ML MODEL CLASSIFICATION")
-            print("-"*60)
-            print(f"Decision: {classification['decision'].upper()}")
-            print(f"Human Probability: {classification['prob_human']:.3f}")
-            print(f"Events Captured: {classification['num_events']}")
-            print(f"Would be accepted: {'✓ YES' if classification['is_human'] else '✗ NO (BOT DETECTED)'}")
         
         if result.get('error'):
             print(f"\nError: {result['error']}")

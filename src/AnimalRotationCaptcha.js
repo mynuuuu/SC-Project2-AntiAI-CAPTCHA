@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import './AnimalRotationCaptcha.css';
+import useBehaviorTracking from './useBehaviorTracking';
+import { shouldCaptureBehavior } from './utils/behaviorMode';
 
 const TOLERANCE = 15;
+const CAPTCHA_TYPE = 'rotation';
+const CAPTCHA_ID = 'captcha2';
 
 const directions = {
   UP: 0,
@@ -19,26 +23,137 @@ function AnimalRotationCaptcha({ onSuccess }) {
   const [animalRotation, setAnimalRotation] = useState(getRandomDirection());
   const [targetRotation] = useState(getRandomDirection());
   const [message, setMessage] = useState('');
+  const containerRef = useRef(null);
+  const shouldLogBehavior = shouldCaptureBehavior();
 
-  const rotateAnimal = (delta) => {
+  const {
+    startRecording,
+    stopRecording,
+    captureEvent,
+    sendToServer,
+    getStats,
+    isRecording,
+    reset,
+  } = useBehaviorTracking();
+
+  const ensureRecording = () => {
+    if (!isRecording) {
+      startRecording();
+    }
+  };
+
+  const normalizeEvent = (event) => {
+    if (!event) return null;
+
+    if (event.touches && event.touches[0]) {
+      const touch = event.touches[0];
+      return {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        pageX: touch.pageX,
+        pageY: touch.pageY,
+        screenX: touch.screenX,
+        screenY: touch.screenY,
+        button: 0,
+        buttons: 1,
+      };
+    }
+
+    if (event.changedTouches && event.changedTouches[0]) {
+      const touch = event.changedTouches[0];
+      return {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        pageX: touch.pageX,
+        pageY: touch.pageY,
+        screenX: touch.screenX,
+        screenY: touch.screenY,
+        button: 0,
+        buttons: 0,
+      };
+    }
+
+    return event;
+  };
+
+  const recordEvent = (eventType, reactEvent, autoStart = true) => {
+    const nativeEvent = reactEvent?.nativeEvent || reactEvent;
+
+    if (autoStart) {
+      ensureRecording();
+    } else if (!isRecording) {
+      return;
+    }
+
+    const normalizedEvent = normalizeEvent(nativeEvent);
+    if (normalizedEvent) {
+      captureEvent(eventType, normalizedEvent, containerRef.current);
+    }
+  };
+
+  const rotateAnimal = (delta, event) => {
+    if (event?.preventDefault) {
+      event.preventDefault();
+    }
+
+    recordEvent(delta > 0 ? 'rotate_right' : 'rotate_left', event);
     setAnimalRotation((prev) => (prev + delta + 360) % 360);
     setMessage('');
   };
 
-  const checkAlignment = () => {
-    const diff = Math.abs(animalRotation - targetRotation);
-    if (diff <= TOLERANCE || diff >= 360 - TOLERANCE) {
-      setMessage('✅ Captcha Passed!');
-      if (onSuccess) {
-        onSuccess();
-      }
-    } else {
-      setMessage('❌ Try Again!');
+  const handleMouseMove = (event) => {
+    recordEvent('mousemove', event, false);
+  };
+
+  const checkAlignment = async (event) => {
+    if (event) {
+      recordEvent('submit_click', event);
     }
+
+    const diff = Math.abs(animalRotation - targetRotation);
+    const isSuccess = diff <= TOLERANCE || diff >= 360 - TOLERANCE;
+    setMessage(isSuccess ? '✅ Captcha Passed!' : '❌ Try Again!');
+
+    let events = [];
+    if (isRecording) {
+      events = stopRecording();
+    }
+    const stats = getStats();
+
+    if (shouldLogBehavior && events.length > 0) {
+      const serverUrl = 'http://localhost:5001/save_captcha_events';
+      const result = await sendToServer(
+        serverUrl,
+        CAPTCHA_TYPE,
+        'human',
+        CAPTCHA_ID,
+        isSuccess
+      );
+      if (result.success) {
+        console.log('✓ Data saved to captcha2.csv');
+      } else {
+        console.error('Failed to save rotation captcha data:', result.error);
+      }
+    } else if (!shouldLogBehavior) {
+      console.log('Behavior logging skipped for rotation captcha (human-only mode).');
+    } else {
+      console.warn('No rotation behavior events captured; skipping server upload.');
+    }
+
+    if (isSuccess && typeof onSuccess === 'function') {
+      onSuccess(stats);
+    }
+
+    reset();
   };
 
   return (
-    <div className="rotation-captcha-container">
+    <div
+      className="rotation-captcha-container"
+      ref={containerRef}
+      onMouseMove={handleMouseMove}
+      onTouchMove={(event) => recordEvent('touchmove', event, false)}
+    >
       <h2 className="rotation-captcha-title">
         Rotate the animal to face the finger
       </h2>
@@ -64,19 +179,23 @@ function AnimalRotationCaptcha({ onSuccess }) {
       <div className="rotation-captcha-controls">
         <div className="rotation-captcha-buttons">
           <button
-            onClick={() => rotateAnimal(-15)}
+            onMouseDown={(event) => rotateAnimal(-15, event)}
+            onTouchStart={(event) => rotateAnimal(-15, event)}
             className="rotation-captcha-button"
           >
             ←
           </button>
           <button
-            onClick={() => rotateAnimal(15)}
+            onMouseDown={(event) => rotateAnimal(15, event)}
+            onTouchStart={(event) => rotateAnimal(15, event)}
             className="rotation-captcha-button"
           >
             →
           </button>
         </div>
         <button
+          onMouseDown={(event) => recordEvent('submit_button_mousedown', event)}
+          onTouchStart={(event) => recordEvent('submit_button_touchstart', event)}
           onClick={checkAlignment}
           className="rotation-captcha-button-submit"
         >
@@ -85,11 +204,14 @@ function AnimalRotationCaptcha({ onSuccess }) {
       </div>
 
       {message && (
-        <p className={`rotation-captcha-message ${
-          message.includes('✅')
-            ? 'rotation-captcha-message-success'
-            : 'rotation-captcha-message-error'
-        }`}>
+        <p
+          className={
+            'rotation-captcha-message ' +
+            (message.includes('✅')
+              ? 'rotation-captcha-message-success'
+              : 'rotation-captcha-message-error')
+          }
+        >
           {message}
         </p>
       )}

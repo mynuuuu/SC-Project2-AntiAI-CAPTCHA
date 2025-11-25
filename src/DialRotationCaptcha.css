@@ -159,6 +159,7 @@
   margin-top: 30px;
   display: flex;
   justify-content: center;
+  gap: 15px;
 }
 
 .dial-captcha-button-submit {
@@ -172,12 +173,32 @@
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   transition: all 0.2s ease;
-  min-width: 200px;
+  min-width: 150px;
 }
 
 .dial-captcha-button-submit:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.dial-captcha-button-skip {
+  padding: 12px 48px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #667eea;
+  background: white;
+  border: 2px solid #667eea;
+  border-radius: 25px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  min-width: 150px;
+}
+
+.dial-captcha-button-skip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3);
+  background: #f0f7ff;
 }
 
 .dial-captcha-message {
@@ -234,10 +255,15 @@
     font-size: 20px;
   }
 
-  .dial-captcha-button-submit {
+  .dial-captcha-button-submit,
+  .dial-captcha-button-skip {
     padding: 10px 32px;
     font-size: 16px;
-    min-width: 160px;
+    min-width: 120px;
+  }
+
+  .dial-controls {
+    gap: 10px;
   }
 
   .dial-captcha-message {

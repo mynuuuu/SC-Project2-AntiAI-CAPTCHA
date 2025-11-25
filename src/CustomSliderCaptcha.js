@@ -1,6 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
 import './CustomSliderCaptcha.css';
 import useBehaviorTracking from './useBehaviorTracking';
+import { shouldCaptureBehavior } from './utils/behaviorMode';
+
+const createInitialInteractionStats = () => ({
+  dragCount: 0,
+  totalTravel: 0,
+  directionChanges: 0,
+  lastDeltaSign: 0,
+  usedMouse: false,
+  usedTouch: false,
+  startedAt: null,
+  firstInteractionDelay: null,
+  maxSpeed: 0,
+  lastMoveTimestamp: null,
+  sliderTrace: [],
+});
 
 const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
   const [sliderPosition, setSliderPosition] = useState(0);
@@ -9,20 +24,30 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
   const [isFailed, setIsFailed] = useState(false);
   const [puzzlePosition, setPuzzlePosition] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [message, setMessage] = useState('');
 
   const containerRef = useRef(null);
   const startXRef = useRef(0);
+  const sliderPositionRef = useRef(0);
+  const mountTimeRef = useRef(null);
+  const interactionStatsRef = useRef(createInitialInteractionStats());
 
   // Behavior tracking hook
   const {
     startRecording,
     stopRecording,
     captureEvent,
-    saveToCSV,
     sendToServer,
     getStats,
     isRecording,
+    sessionId,
   } = useBehaviorTracking();
+  const shouldLogBehavior = shouldCaptureBehavior();
+  const resolvedCaptchaId = captchaId || 'captcha1';
+
+  useEffect(() => {
+    mountTimeRef.current = performance.now();
+  }, []);
 
   // Generate random puzzle position when component mounts or image changes
   useEffect(() => {
@@ -30,44 +55,113 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
     setPuzzlePosition(randomX);
   }, [imageUrl]);
 
+  const resetInteractionStats = () => {
+    interactionStatsRef.current = createInitialInteractionStats();
+  };
+
+  const pointerDownStats = (mode) => {
+    const stats = interactionStatsRef.current;
+    stats.dragCount += 1;
+    if (mode === 'mouse') stats.usedMouse = true;
+    if (mode === 'touch') stats.usedTouch = true;
+    const now = performance.now();
+    if (!stats.startedAt) {
+      stats.startedAt = now;
+      stats.firstInteractionDelay = mountTimeRef.current
+        ? now - mountTimeRef.current
+        : 0;
+    }
+  };
+
+  const updateMoveStats = (delta, newPosition) => {
+    if (delta === 0) return;
+    const stats = interactionStatsRef.current;
+    const now = performance.now();
+    const deltaAbs = Math.abs(delta);
+    stats.totalTravel += deltaAbs;
+    const deltaSign = delta > 0 ? 1 : -1;
+    if (stats.lastDeltaSign !== 0 && deltaSign !== stats.lastDeltaSign) {
+      stats.directionChanges += 1;
+    }
+    stats.lastDeltaSign = deltaSign;
+
+    if (stats.lastMoveTimestamp) {
+      const elapsed = now - stats.lastMoveTimestamp;
+      if (elapsed > 0) {
+        const speed = deltaAbs / (elapsed / 1000);
+        if (speed > stats.maxSpeed) {
+          stats.maxSpeed = speed;
+        }
+      }
+    }
+    stats.lastMoveTimestamp = now;
+
+    const relativeTime = stats.startedAt ? now - stats.startedAt : 0;
+    stats.sliderTrace.push({
+      t: Number(relativeTime.toFixed(2)),
+      position: Number(newPosition.toFixed(2)),
+    });
+    if (stats.sliderTrace.length > 200) {
+      stats.sliderTrace.shift();
+    }
+  };
+
   const handleMouseDown = (e) => {
     e.preventDefault();
     setIsDragging(true);
     startXRef.current = e.clientX - sliderPosition;
+    sliderPositionRef.current = sliderPosition;
 
     // Start behavior recording
-    startRecording();
-    captureEvent('mousedown', e, containerRef.current);
+    if (!isRecording && shouldLogBehavior) {
+      startRecording();
+    }
+    if (shouldLogBehavior) {
+      captureEvent('mousedown', e, containerRef.current);
+    }
+    pointerDownStats('mouse');
   };
 
   const handleTouchStart = (e) => {
     setIsDragging(true);
     startXRef.current = e.touches[0].clientX - sliderPosition;
+    sliderPositionRef.current = sliderPosition;
 
     // Start behavior recording for touch
-    startRecording();
-    // Convert touch event to mouse-like event for tracking
-    const touchEvent = {
-      clientX: e.touches[0].clientX,
-      clientY: e.touches[0].clientY,
-      pageX: e.touches[0].pageX,
-      pageY: e.touches[0].pageY,
-      screenX: e.touches[0].screenX,
-      screenY: e.touches[0].screenY,
-    };
-    captureEvent('touchstart', touchEvent, containerRef.current);
+    if (!isRecording && shouldLogBehavior) {
+      startRecording();
+    }
+    if (shouldLogBehavior) {
+      // Convert touch event to mouse-like event for tracking
+      const touchEvent = {
+        clientX: e.touches[0].clientX,
+        clientY: e.touches[0].clientY,
+        pageX: e.touches[0].pageX,
+        pageY: e.touches[0].pageY,
+        screenX: e.touches[0].screenX,
+        screenY: e.touches[0].screenY,
+      };
+      captureEvent('touchstart', touchEvent, containerRef.current);
+    }
+    pointerDownStats('touch');
   };
 
   const handleMouseMove = (e) => {
     if (!isDragging) return;
 
     const containerWidth = containerRef.current?.offsetWidth || 300;
-    const maxSlide = containerWidth - 50;
+    const maxSlide = containerWidth - 50; // 50px is slider button width
+    const prevPosition = sliderPositionRef.current;
     const newPosition = Math.min(Math.max(0, e.clientX - startXRef.current), maxSlide);
+    const delta = newPosition - prevPosition;
     setSliderPosition(newPosition);
+    sliderPositionRef.current = newPosition;
+    updateMoveStats(delta, newPosition);
 
     // Capture mouse movement
-    captureEvent('mousemove', e, containerRef.current);
+    if (shouldLogBehavior) {
+      captureEvent('mousemove', e, containerRef.current);
+    }
   };
 
   const handleTouchMove = (e) => {
@@ -75,19 +169,25 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
 
     const containerWidth = containerRef.current?.offsetWidth || 300;
     const maxSlide = containerWidth - 50;
+    const prevPosition = sliderPositionRef.current;
     const newPosition = Math.min(Math.max(0, e.touches[0].clientX - startXRef.current), maxSlide);
+    const delta = newPosition - prevPosition;
     setSliderPosition(newPosition);
+    sliderPositionRef.current = newPosition;
+    updateMoveStats(delta, newPosition);
 
     // Capture touch movement
-    const touchEvent = {
-      clientX: e.touches[0].clientX,
-      clientY: e.touches[0].clientY,
-      pageX: e.touches[0].pageX,
-      pageY: e.touches[0].pageY,
-      screenX: e.touches[0].screenX,
-      screenY: e.touches[0].screenY,
-    };
-    captureEvent('touchmove', touchEvent, containerRef.current);
+    if (shouldLogBehavior) {
+      const touchEvent = {
+        clientX: e.touches[0].clientX,
+        clientY: e.touches[0].clientY,
+        pageX: e.touches[0].pageX,
+        pageY: e.touches[0].pageY,
+        screenX: e.touches[0].screenX,
+        screenY: e.touches[0].screenY,
+      };
+      captureEvent('touchmove', touchEvent, containerRef.current);
+    }
   };
 
   const handleMouseUp = (e) => {
@@ -95,7 +195,9 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
     setIsDragging(false);
 
     // Capture mouse up event
-    captureEvent('mouseup', e, containerRef.current);
+    if (shouldLogBehavior) {
+      captureEvent('mouseup', e, containerRef.current);
+    }
     verifyPosition();
   };
 
@@ -104,15 +206,17 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
     setIsDragging(false);
 
     // Capture touch end event
-    const touchEvent = {
-      clientX: e.changedTouches[0].clientX,
-      clientY: e.changedTouches[0].clientY,
-      pageX: e.changedTouches[0].pageX,
-      pageY: e.changedTouches[0].pageY,
-      screenX: e.changedTouches[0].screenX,
-      screenY: e.changedTouches[0].screenY,
-    };
-    captureEvent('touchend', touchEvent, containerRef.current);
+    if (shouldLogBehavior) {
+      const touchEvent = {
+        clientX: e.changedTouches[0].clientX,
+        clientY: e.changedTouches[0].clientY,
+        pageX: e.changedTouches[0].pageX,
+        pageY: e.changedTouches[0].pageY,
+        screenX: e.changedTouches[0].screenX,
+        screenY: e.changedTouches[0].screenY,
+      };
+      captureEvent('touchend', touchEvent, containerRef.current);
+    }
     verifyPosition();
   };
 
@@ -120,64 +224,107 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
     const tolerance = 10;
     const isCorrect = Math.abs(sliderPosition - puzzlePosition) < tolerance;
 
-    // Stop recording
-    const events = stopRecording();
-    const stats = getStats();
+    // Stop recording and get stats
+    const events = shouldLogBehavior ? stopRecording() : [];
+    const behaviorStats = shouldLogBehavior ? getStats() : {};
+    const stats = interactionStatsRef.current;
+    const now = performance.now();
+    const interactionDuration = stats.startedAt ? now - stats.startedAt : 0;
 
-    // Send data to server
-    const serverUrl = 'http://localhost:5001/save_captcha_events';
-    const result = await sendToServer(serverUrl, 'human', captchaId, isCorrect);
-    
-    if (result.success) {
-      console.log(`✓ Data saved to ${captchaId}.csv`);
-    } else {
-      console.error('Failed to save data to server:', result.error);
+    // Send data to server with slider-specific metadata
+    if (shouldLogBehavior && events.length > 0) {
+      const metadata = {
+        target_position_px: Number(puzzlePosition.toFixed(2)),
+        final_slider_position_px: Number(sliderPosition.toFixed(2)),
+        success: isCorrect,
+        drag_count: stats.dragCount,
+        total_travel_px: Number(stats.totalTravel.toFixed(2)),
+        direction_changes: stats.directionChanges,
+        max_speed_px_per_sec: Number(stats.maxSpeed.toFixed(2)),
+        interaction_duration_ms: Number(interactionDuration.toFixed(2)),
+        idle_before_first_drag_ms: stats.firstInteractionDelay
+          ? Number(stats.firstInteractionDelay.toFixed(2))
+          : 0,
+        used_mouse: stats.usedMouse,
+        used_touch: stats.usedTouch,
+        slider_trace: stats.sliderTrace,
+        behavior_event_count: events.length,
+        behavior_stats: behaviorStats,
+      };
+
+      try {
+        const serverUrl = 'http://localhost:5001/save_captcha_events';
+        const response = await fetch(serverUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            captcha_id: resolvedCaptchaId,
+            session_id: sessionId,
+            captchaType: 'slider',
+            events: events,
+            metadata: metadata,
+            success: isCorrect,
+          }),
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+          console.log(`✓ Data saved to ${resolvedCaptchaId}.csv`);
+        } else {
+          console.error('Failed to save data:', result.error);
+        }
+      } catch (error) {
+        console.error('Error saving data:', error);
+      }
+    } else if (!shouldLogBehavior) {
+      console.log('Behavior logging skipped (not running via npm start).');
     }
 
+    resetInteractionStats();
+
+    // Normal captcha verification flow
     if (isCorrect) {
       setIsVerified(true);
       setIsFailed(false);
-
-      console.log('Captcha solved! Behavior data saved to server.');
-      console.log('Stats:', stats);
+      setMessage('✅ Captcha Solved');
 
       onVerify({
         success: true,
         position: sliderPosition,
         target: puzzlePosition,
         behaviorStats: stats,
-        eventCount: events.length
+        eventCount: events.length,
       });
-
-      // Don't auto-reset on success - keep it verified
     } else {
       setIsFailed(true);
-      
-      console.log('Captcha failed. Behavior data saved to server.');
-      console.log('Stats:', stats);
-      
-      onVerify({ 
-        success: false, 
-        position: sliderPosition, 
+      setMessage('❌ Try Again');
+
+      onVerify({
+        success: false,
+        position: sliderPosition,
         target: puzzlePosition,
         behaviorStats: stats,
-        eventCount: events.length
+        eventCount: events.length,
       });
-      
+
       // Auto-reset after 1 second
       setTimeout(() => {
         setSliderPosition(0);
         setIsFailed(false);
+        setMessage('');
       }, 1000);
     }
   };
 
   const handleReset = () => {
     setSliderPosition(0);
+    sliderPositionRef.current = 0;
     setIsVerified(false);
     setIsFailed(false);
     const randomX = Math.floor(Math.random() * 150) + 100;
     setPuzzlePosition(randomX);
+    resetInteractionStats();
     if (onReset) onReset();
   };
 
