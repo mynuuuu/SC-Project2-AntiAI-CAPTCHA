@@ -30,6 +30,7 @@ function AnimalSelectionPage() {
     });
 
     const handleSelect = (animalName) => {
+        if (isAnswered) return;
         if (animalName === seenAnimal) {
             setIsSuccess(true);
         } else {
@@ -38,43 +39,51 @@ function AnimalSelectionPage() {
         setIsAnswered(true);
     };
 
+    const handleNext = () => {
+        navigate('/morse-captcha');
+    }
+
     const handleFinish = () => {
         navigate('/');
     };
 
-    if (isAnswered) {
-        return (
-            <div className="App">
-                <header className="App-header">
-                    <h1>Verification Complete</h1>
-                </header>
-                <div className="success-message" style={{ marginTop: '50px' }}>
-                    <h2>{isSuccess ? '🎉 You are Human!' : '🚫 You are a Robot!'}</h2>
-                    <p>{isSuccess ? 'You have successfully identified the animal.' : ''}</p>
-                    <button
-                        onClick={handleFinish}
-                        style={{
-                            marginTop: '20px',
-                            padding: '12px 32px',
-                            fontSize: '18px',
-                            fontWeight: '600',
-                            color: 'white',
-                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                            border: 'none',
-                            borderRadius: '25px',
-                            cursor: 'pointer',
-                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                            transition: 'all 0.2s ease',
-                        }}
-                        onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
-                        onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
-                    >
-                        Finish
-                    </button>
-                </div>
-            </div>
-        );
+    const goHome = () => {
+        navigate('/');
     }
+
+    // if (isAnswered) {
+    //     return (
+    //         <div className="App">
+    //             <header className="App-header">
+    //                 <h1>Verification Complete</h1>
+    //             </header>
+    //             <div className="success-message" style={{ marginTop: '50px' }}>
+    //                 <h2>{isSuccess ? '🎉 You are Human!' : '🚫 You are a Robot!'}</h2>
+    //                 <p>{isSuccess ? 'You have successfully identified the animal.' : ''}</p>
+    //                 <button
+    //                     onClick={handleFinish}
+    //                     style={{
+    //                         marginTop: '20px',
+    //                         padding: '12px 32px',
+    //                         fontSize: '18px',
+    //                         fontWeight: '600',
+    //                         color: 'white',
+    //                         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    //                         border: 'none',
+    //                         borderRadius: '25px',
+    //                         cursor: 'pointer',
+    //                         boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    //                         transition: 'all 0.2s ease',
+    //                     }}
+    //                     onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+    //                     onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+    //                 >
+    //                     Finish
+    //                 </button>
+    //             </div>
+    //         </div>
+    //     );
+    // }
 
     return (
         <div className="App">
@@ -125,6 +134,57 @@ function AnimalSelectionPage() {
                     </div>
                 ))}
             </div>
+            {isSuccess && (
+                <div className="success-message">
+                    <h2>Captcha Verified!</h2>
+                    <p>Click Next to continue to the rotation captcha.</p>
+                    <button
+                        onClick={handleNext}
+                        style={{
+                            marginTop: '20px',
+                            padding: '12px 32px',
+                            fontSize: '18px',
+                            fontWeight: '600',
+                            color: 'white',
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            border: 'none',
+                            borderRadius: '25px',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                            transition: 'all 0.2s ease',
+                        }}
+                        onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+                        onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+                    >
+                        Next →
+                    </button>
+                </div>
+            )}
+            {!isSuccess && isAnswered && (
+                <div className="success-message">
+                    <h2>Captcha Verification Failed!</h2>
+                    <button
+                        onClick={goHome}
+                        style={{
+                            marginTop: '20px',
+                            padding: '12px 32px',
+                            fontSize: '18px',
+                            fontWeight: '600',
+                            color: 'white',
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            border: 'none',
+                            borderRadius: '25px',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                            transition: 'all 0.2s ease',
+                        }}
+                        onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+                        onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+                    >
+                        Start Over
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

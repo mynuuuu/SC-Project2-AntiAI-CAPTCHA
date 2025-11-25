@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import SliderCaptchaPage from './SliderCaptchaPage';
 import AnimalRotationPage from './AnimalRotationPage';
 import AnimalSelectionPage from './AnimalSelectionPage';
+import MorseCaptcha from './MorseCaptcha';
 import './App.css';
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
         <Route path="/" element={<SliderCaptchaPage />} />
         <Route path="/rotation-captcha" element={<AnimalRotationPage />} />
         <Route path="/animal-selection" element={<AnimalSelectionPage />} />
+        <Route path="/morse-captcha" element={<MorseCaptcha />} />
       </Routes>
     </Router>
   );

@@ -7,14 +7,10 @@ function SliderCaptchaPage() {
   const navigate = useNavigate();
   const [captchaStatus, setCaptchaStatus] = useState({
     captcha1: false,
-    captcha2: false,
-    captcha3: false,
   });
 
   const [resetKeys, setResetKeys] = useState({
     captcha1: 0,
-    captcha2: 0,
-    captcha3: 0,
   });
 
   // Pool of available images
@@ -37,23 +33,13 @@ function SliderCaptchaPage() {
     const shuffled = [...imagePool].sort(() => Math.random() - 0.5);
 
     // Select the first 3 images
-    const selectedImages = shuffled.slice(0, 3);
+    const selectedImages = shuffled.slice(0, 1);
 
     return [
       {
         id: 'captcha1',
-        title: 'Captcha 1',
+        title: 'Slider Captcha',
         bgUrl: selectedImages[0],
-      },
-      {
-        id: 'captcha2',
-        title: 'Captcha 2',
-        bgUrl: selectedImages[1],
-      },
-      {
-        id: 'captcha3',
-        title: 'Captcha 3',
-        bgUrl: selectedImages[2],
       }
     ];
   }, [imagePool]);
@@ -112,7 +98,7 @@ function SliderCaptchaPage() {
 
       {allCaptchasVerified && (
         <div className="success-message">
-          <h2>🎉 All Slider Captchas Verified!</h2>
+          <h2>🎉Slider Captcha Verified!</h2>
           <p>Click Next to continue to the rotation captcha.</p>
           <button
             onClick={handleNext}

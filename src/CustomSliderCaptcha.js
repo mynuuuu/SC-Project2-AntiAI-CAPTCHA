@@ -10,7 +10,6 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
   const [puzzlePosition, setPuzzlePosition] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
 
-  const sliderRef = useRef(null);
   const containerRef = useRef(null);
   const startXRef = useRef(0);
 
@@ -63,7 +62,7 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
     if (!isDragging) return;
 
     const containerWidth = containerRef.current?.offsetWidth || 300;
-    const maxSlide = containerWidth - 50; // 50px is slider button width
+    const maxSlide = containerWidth - 50;
     const newPosition = Math.min(Math.max(0, e.clientX - startXRef.current), maxSlide);
     setSliderPosition(newPosition);
 

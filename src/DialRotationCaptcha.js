@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import './DialRotationCaptcha.css';
 
-const TOLERANCE = 10; // degrees tolerance for correct alignment
+const TOLERANCE = 15; // degrees tolerance for correct alignment
 
 // Available animal images with their corresponding directions
 const animalImages = [
