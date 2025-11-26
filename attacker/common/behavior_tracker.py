@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import sys
 import logging
+import os
+import requests
 
 # Add scripts directory to path to import ml_core
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -251,6 +253,27 @@ class BehaviorTracker:
             logger.info(f"✓ Saved {len(df)} bot behavior events to {output_file}")
             logger.info(f"  Session ID: {self.session_id}")
             logger.info(f"  Captcha: {captcha_id}, Success: {success}")
+
+            # ------------------------------------------------------------------
+            # Also send events to behavior_server for unified logging/defense
+            # ------------------------------------------------------------------
+            try:
+                server_url = os.environ.get("BEHAVIOR_SERVER_URL", "http://localhost:5001/save_captcha_events")
+                payload = {
+                    "captcha_id": captcha_id,
+                    "session_id": self.session_id,
+                    "captchaType": "slider",
+                    "events": self.behavior_events,
+                    "metadata": metadata or self.captcha_metadata or {},
+                    "success": bool(success),
+                }
+                resp = requests.post(server_url, json=payload, timeout=5)
+                if resp.ok:
+                    logger.info("✓ Sent behavior events to behavior_server for logging/classification")
+                else:
+                    logger.warning(f"⚠️  Failed to send behavior to behavior_server: {resp.status_code} {resp.text[:200]}")
+            except Exception as send_err:
+                logger.warning(f"⚠️  Error sending behavior to behavior_server: {send_err}")
             
         except Exception as e:
             logger.error(f"Error saving behavior data to CSV: {e}")
