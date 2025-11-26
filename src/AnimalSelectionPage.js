@@ -165,6 +165,19 @@ function AnimalSelectionPage() {
 
                 if (result.success) {
                     console.log(`✓ Layer 3 data saved to ${CAPTCHA_ID}.csv`);
+                    
+                    // Store classification result for final gate (Morse captcha)
+                    // This is the final classification before Morse - use this to decide access
+                    if (result.classification) {
+                        const classification = result.classification;
+                        localStorage.setItem('final_classification', JSON.stringify({
+                            is_human: classification.is_human,
+                            prob_human: classification.prob_human,
+                            decision: classification.decision,
+                            captcha_id: CAPTCHA_ID
+                        }));
+                        console.log(`📝 Stored final classification: ${classification.decision} (prob: ${classification.prob_human.toFixed(3)})`);
+                    }
                 } else {
                     console.error('Failed to save data:', result.error);
                 }

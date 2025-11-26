@@ -284,6 +284,18 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
             console.log(`Is Human: ${classification.is_human ? '✓ YES' : '✗ NO'}`);
             console.log(`${'='.repeat(60)}\n`);
             
+            // Store classification result for final gate (Morse captcha)
+            // This will be used to decide if user can proceed after Morse
+            if (resolvedCaptchaId === 'captcha1') {
+              // Store classification from first slider for later use
+              localStorage.setItem('slider_classification', JSON.stringify({
+                is_human: classification.is_human,
+                prob_human: classification.prob_human,
+                decision: classification.decision,
+                captcha_id: resolvedCaptchaId
+              }));
+            }
+            
             // You can use classification.is_human to make decisions
             // For example, reject if classified as bot even if CAPTCHA was solved correctly
             if (!classification.is_human && classification.prob_human < 0.5) {
