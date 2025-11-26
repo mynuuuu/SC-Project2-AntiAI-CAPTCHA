@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { evaluateFinalAccess } from "./finalHumanGate";
 
 const DOT_TIME = 500;
 const DASH_TIME = 1200;
@@ -78,7 +79,7 @@ export default function MorseCaptcha() {
         pressStart.current = Date.now();
     };
 
-    const handlePressEnd = () => {
+    const handlePressEnd = async () => {
         const duration = Date.now() - pressStart.current;
         const symbol = duration < HOLD_THRESHOLD ? "." : "-";
 
@@ -86,8 +87,29 @@ export default function MorseCaptcha() {
         setUserInput(updated);
 
         if (updated.length === pattern.length) {
+            const solved = updated === pattern;
+
+            // Ask the defensive logic what to do next
+            const decision = await evaluateFinalAccess({
+                isSolved: solved,
+                sessionId: `morse_${Date.now()}`
+            });
+
+            if (decision === "allow" && solved) {
+                // Human + solved → redirect to entry form (Next button will be enabled)
+                window.location.href = "/entry";
+                return;
+            }
+
+            if (decision === "block") {
+                // Classified as bot → redirect to bot detected page
+                window.location.href = "/bot-detected";
+                return;
+            }
+
+            // decision === "retry" (or fallback) → human but failed, give another chance
             setStage("result");
-            setResult(updated === pattern ? "✅ Correct!" : "❌ Incorrect, try again.");
+            setResult(solved ? "✅ Correct! (try again to proceed)" : "❌ Incorrect, try again.");
         }
     };
 

@@ -51,22 +51,35 @@ def analyze_layer_scores(layer_name, data_file, captcha_id_filter):
     
     print(f"✓ Loaded {len(df)} rows, {df['session_id'].nunique()} sessions")
     
-    # Load model
-    model_path = MODELS_DIR / f"{layer_name}_ensemble_model.pkl"
+    # Load slider classifier model
+    model_path = MODELS_DIR / "slider_classifier_ensemble.pkl"
     if not model_path.exists():
         print(f"❌ Model not found: {model_path}")
         return None
     
     model_dict = joblib.load(model_path)
-    isolation_forest = model_dict['isolation_forest']
-    one_class_svm = model_dict['one_class_svm']
-    scaler = model_dict['scaler']
-    feature_names = model_dict['feature_names']
+    rf_model = model_dict.get('random_forest')
+    gb_model = model_dict.get('gradient_boosting')
+    scaler_path = MODELS_DIR / "slider_classifier_scaler.pkl"
     
-    print(f"✓ Loaded model")
+    if not scaler_path.exists():
+        print(f"❌ Scaler not found: {scaler_path}")
+        return None
+    
+    scaler = joblib.load(scaler_path)
+    
+    if rf_model is None or gb_model is None:
+        print(f"❌ Model missing required components")
+        return None
+    
+    print(f"✓ Loaded slider classifier model")
     
     # Extract features for all sessions
-    from ml_core import extract_slider_features, extract_rotation_features, extract_question_features
+    from ml_core import extract_slider_features
+    
+    if layer_name != 'slider_layer1':
+        print(f"⚠️  Only slider_layer1 is supported. Skipping {layer_name}")
+        return None
     
     all_features = []
     all_session_ids = []
@@ -82,15 +95,8 @@ def analyze_layer_scores(layer_name, data_file, captcha_id_filter):
                 except (json.JSONDecodeError, TypeError):
                     metadata = None
             
-            # Extract features based on layer type
-            if layer_name == 'slider_layer1':
-                features = extract_slider_features(group, metadata)
-            elif layer_name == 'rotation_layer2':
-                features = extract_rotation_features(group, metadata)
-            elif layer_name == 'layer3_question':
-                features = extract_question_features(group, metadata)
-            else:
-                continue
+            # Extract slider features
+            features = extract_slider_features(group, metadata)
             
             all_features.append(features)
             all_session_ids.append(session_id)
@@ -106,107 +112,93 @@ def analyze_layer_scores(layer_name, data_file, captcha_id_filter):
     print(f"✓ Extracted features for {len(X)} sessions")
     
     # Scale features
-    features_df = pd.DataFrame(X, columns=feature_names)
-    X_scaled = scaler.transform(features_df)
+    X_scaled = scaler.transform(X)
     
-    # Get predictions and scores
-    if_preds = isolation_forest.predict(X_scaled)
-    if_scores = isolation_forest.score_samples(X_scaled)
+    # Get predictions and probabilities from supervised models
+    rf_proba = rf_model.predict_proba(X_scaled)[:, 1]  # Probability of being human
+    gb_proba = gb_model.predict_proba(X_scaled)[:, 1]  # Probability of being human
+    ensemble_proba = (rf_proba + gb_proba) / 2.0
     
-    svm_preds = one_class_svm.predict(X_scaled)
-    svm_scores = one_class_svm.score_samples(X_scaled)
+    rf_preds = (rf_proba > 0.5).astype(int)
+    gb_preds = (gb_proba > 0.5).astype(int)
+    ensemble_preds = (ensemble_proba > 0.5).astype(int)
     
     # Analyze distributions
-    print("\n📊 SCORE DISTRIBUTIONS (Human Data Only)")
+    print("\n📊 PROBABILITY DISTRIBUTIONS (Human Data Only)")
     print("-" * 80)
     
-    print("\n🌲 Isolation Forest:")
-    print(f"   Predictions: {np.sum(if_preds == 1)} human, {np.sum(if_preds == -1)} bot")
-    print(f"   Score range: [{np.min(if_scores):.4f}, {np.max(if_scores):.4f}]")
-    print(f"   Score mean: {np.mean(if_scores):.4f}")
-    print(f"   Score std: {np.std(if_scores):.4f}")
-    print(f"   Score percentiles:")
-    print(f"      5%: {np.percentile(if_scores, 5):.4f}")
-    print(f"     10%: {np.percentile(if_scores, 10):.4f}")
-    print(f"     25%: {np.percentile(if_scores, 25):.4f}")
-    print(f"     50%: {np.percentile(if_scores, 50):.4f}")
-    print(f"     75%: {np.percentile(if_scores, 75):.4f}")
-    print(f"     90%: {np.percentile(if_scores, 90):.4f}")
-    print(f"     95%: {np.percentile(if_scores, 95):.4f}")
+    print("\n🌲 Random Forest:")
+    print(f"   Predictions: {np.sum(rf_preds == 1)} human, {np.sum(rf_preds == 0)} bot")
+    print(f"   Probability range: [{np.min(rf_proba):.4f}, {np.max(rf_proba):.4f}]")
+    print(f"   Probability mean: {np.mean(rf_proba):.4f}")
+    print(f"   Probability std: {np.std(rf_proba):.4f}")
+    print(f"   Probability percentiles:")
+    print(f"      5%: {np.percentile(rf_proba, 5):.4f}")
+    print(f"     10%: {np.percentile(rf_proba, 10):.4f}")
+    print(f"     25%: {np.percentile(rf_proba, 25):.4f}")
+    print(f"     50%: {np.percentile(rf_proba, 50):.4f}")
+    print(f"     75%: {np.percentile(rf_proba, 75):.4f}")
+    print(f"     90%: {np.percentile(rf_proba, 90):.4f}")
+    print(f"     95%: {np.percentile(rf_proba, 95):.4f}")
     
-    print("\n🔍 One-Class SVM:")
-    print(f"   Predictions: {np.sum(svm_preds == 1)} human, {np.sum(svm_preds == -1)} bot")
-    print(f"   Score range: [{np.min(svm_scores):.4f}, {np.max(svm_scores):.4f}]")
-    print(f"   Score mean: {np.mean(svm_scores):.4f}")
-    print(f"   Score std: {np.std(svm_scores):.4f}")
-    print(f"   Score percentiles:")
-    print(f"      5%: {np.percentile(svm_scores, 5):.4f}")
-    print(f"     10%: {np.percentile(svm_scores, 10):.4f}")
-    print(f"     25%: {np.percentile(svm_scores, 25):.4f}")
-    print(f"     50%: {np.percentile(svm_scores, 50):.4f}")
-    print(f"     75%: {np.percentile(svm_scores, 75):.4f}")
-    print(f"     90%: {np.percentile(svm_scores, 90):.4f}")
-    print(f"     95%: {np.percentile(svm_scores, 95):.4f}")
+    print("\n📈 Gradient Boosting:")
+    print(f"   Predictions: {np.sum(gb_preds == 1)} human, {np.sum(gb_preds == 0)} bot")
+    print(f"   Probability range: [{np.min(gb_proba):.4f}, {np.max(gb_proba):.4f}]")
+    print(f"   Probability mean: {np.mean(gb_proba):.4f}")
+    print(f"   Probability std: {np.std(gb_proba):.4f}")
+    print(f"   Probability percentiles:")
+    print(f"      5%: {np.percentile(gb_proba, 5):.4f}")
+    print(f"     10%: {np.percentile(gb_proba, 10):.4f}")
+    print(f"     25%: {np.percentile(gb_proba, 25):.4f}")
+    print(f"     50%: {np.percentile(gb_proba, 50):.4f}")
+    print(f"     75%: {np.percentile(gb_proba, 75):.4f}")
+    print(f"     90%: {np.percentile(gb_proba, 90):.4f}")
+    print(f"     95%: {np.percentile(gb_proba, 95):.4f}")
     
-    # Test normalization approaches
-    print("\n🔧 NORMALIZATION COMPARISON")
-    print("-" * 80)
-    
-    # Old normalization (from code)
-    if_norm_old = np.array([max(0.0, min(1.0, (s + 0.5) / 1.0)) for s in if_scores])
-    svm_norm_old = np.array([max(0.0, min(1.0, (s + 1.0) / 2.0)) for s in svm_scores])
-    
-    # New normalization (sigmoid)
-    if_norm_new = 1.0 / (1.0 + np.exp(-if_scores * 5))
-    svm_norm_new = 1.0 / (1.0 + np.exp(-svm_scores))
-    
-    print("\nOLD Normalization (Linear):")
-    print(f"   IF normalized range: [{np.min(if_norm_old):.4f}, {np.max(if_norm_old):.4f}]")
-    print(f"   IF normalized mean: {np.mean(if_norm_old):.4f}")
-    print(f"   SVM normalized range: [{np.min(svm_norm_old):.4f}, {np.max(svm_norm_old):.4f}]")
-    print(f"   SVM normalized mean: {np.mean(svm_norm_old):.4f}")
-    print(f"   Avg confidence range: [{np.min((if_norm_old + svm_norm_old)/2):.4f}, {np.max((if_norm_old + svm_norm_old)/2):.4f}]")
-    print(f"   Avg confidence mean: {np.mean((if_norm_old + svm_norm_old)/2):.4f}")
-    
-    print("\nNEW Normalization (Sigmoid):")
-    print(f"   IF normalized range: [{np.min(if_norm_new):.4f}, {np.max(if_norm_new):.4f}]")
-    print(f"   IF normalized mean: {np.mean(if_norm_new):.4f}")
-    print(f"   SVM normalized range: [{np.min(svm_norm_new):.4f}, {np.max(svm_norm_new):.4f}]")
-    print(f"   SVM normalized mean: {np.mean(svm_norm_new):.4f}")
-    print(f"   Avg confidence range: [{np.min((if_norm_new + svm_norm_new)/2):.4f}, {np.max((if_norm_new + svm_norm_new)/2):.4f}]")
-    print(f"   Avg confidence mean: {np.mean((if_norm_new + svm_norm_new)/2):.4f}")
+    print("\n🎯 Ensemble (Average):")
+    print(f"   Predictions: {np.sum(ensemble_preds == 1)} human, {np.sum(ensemble_preds == 0)} bot")
+    print(f"   Probability range: [{np.min(ensemble_proba):.4f}, {np.max(ensemble_proba):.4f}]")
+    print(f"   Probability mean: {np.mean(ensemble_proba):.4f}")
+    print(f"   Probability std: {np.std(ensemble_proba):.4f}")
+    print(f"   Probability percentiles:")
+    print(f"      5%: {np.percentile(ensemble_proba, 5):.4f}")
+    print(f"     10%: {np.percentile(ensemble_proba, 10):.4f}")
+    print(f"     25%: {np.percentile(ensemble_proba, 25):.4f}")
+    print(f"     50%: {np.percentile(ensemble_proba, 50):.4f}")
+    print(f"     75%: {np.percentile(ensemble_proba, 75):.4f}")
+    print(f"     90%: {np.percentile(ensemble_proba, 90):.4f}")
+    print(f"     95%: {np.percentile(ensemble_proba, 95):.4f}")
     
     # Recommendations
     print("\n💡 RECOMMENDATIONS")
     print("-" * 80)
     
-    # False positive rate analysis
-    false_pos_rate = np.sum(if_preds == -1) / len(if_preds) * 100
+    # False positive rate analysis (humans predicted as bots)
+    false_pos_rate = np.sum(ensemble_preds == 0) / len(ensemble_preds) * 100
     print(f"\n⚠️  Current false positive rate: {false_pos_rate:.1f}%")
-    print(f"   ({np.sum(if_preds == -1)} out of {len(if_preds)} humans flagged as bots)")
+    print(f"   ({np.sum(ensemble_preds == 0)} out of {len(ensemble_preds)} humans flagged as bots)")
     
     if false_pos_rate > 5:
         print("\n⚠️  HIGH FALSE POSITIVE RATE!")
         print("   Recommendations:")
-        print("   1. Use LOWER threshold (0.25-0.35) to accept more humans")
-        print("   2. Retrain with contamination=0.05 (expect fewer outliers)")
-        print("   3. Collect BOT data and retrain with supervised learning")
+        print("   1. Lower threshold from 0.5 to 0.3-0.4 to accept more humans")
+        print("   2. Retrain with more balanced data")
+        print("   3. Check if model is overfitting")
     else:
         print("\n✓ False positive rate is acceptable")
-        print("   Current threshold of 0.3-0.4 should work well")
+        print("   Standard threshold of 0.5 should work well")
     
     # Suggest optimal threshold based on percentiles
-    avg_conf_new = (if_norm_new + svm_norm_new) / 2
-    suggested_threshold = np.percentile(avg_conf_new, 10)  # 10th percentile
+    suggested_threshold = np.percentile(ensemble_proba, 10)  # 10th percentile
     print(f"\n🎯 Suggested threshold: {suggested_threshold:.3f}")
     print(f"   (This would accept 90% of current human data)")
+    print(f"   Standard threshold: 0.5 (binary classification)")
     
     return {
         'layer_name': layer_name,
-        'if_scores': if_scores,
-        'svm_scores': svm_scores,
-        'if_norm_new': if_norm_new,
-        'svm_norm_new': svm_norm_new,
+        'rf_proba': rf_proba,
+        'gb_proba': gb_proba,
+        'ensemble_proba': ensemble_proba,
         'suggested_threshold': suggested_threshold
     }
 
@@ -219,11 +211,9 @@ def main():
     
     results = {}
     
-    # Analyze each layer
+    # Analyze slider layer only
     layers = [
         ('slider_layer1', 'captcha1.csv', None),
-        ('rotation_layer2', 'rotation_layer.csv', 'rotation_layer'),
-        ('layer3_question', 'layer3_question.csv', 'layer3_question'),
     ]
     
     for layer_name, data_file, captcha_filter in layers:
@@ -242,20 +232,20 @@ def main():
         print(f"   {layer_name}: {result['suggested_threshold']:.3f}")
     
     print("\n💡 What to do:")
-    print("   1. [DONE] Updated ml_core.py with better normalization (sigmoid)")
+    print("   1. [DONE] Updated ml_core.py to use slider classifier models")
     print("   2. [TODO] Test with real human users to verify false positive rate")
-    print("   3. [TODO] Collect bot behavior data (run attacker, save traces)")
-    print("   4. [TODO] Retrain with both human and bot data (supervised learning)")
+    print("   3. [TODO] Monitor model performance and retrain as needed")
+    print("   4. [TODO] Collect more bot data to improve model accuracy")
     
     print("\n🔧 Quick Test:")
     print("   python -m scripts.server  # Start the server")
     print("   # Then test with real human interactions")
     print("   # Check network responses to see classification results")
     
-    print("\n⚠️  IMPORTANT:")
-    print("   One-class models (anomaly detection) have inherent limitations.")
-    print("   For production use, you SHOULD collect bot data and retrain")
-    print("   with supervised learning (Random Forest, Gradient Boosting, etc.)")
+    print("\n✅ Model Type:")
+    print("   Using supervised classification (Random Forest + Gradient Boosting)")
+    print("   Trained on both human and bot data")
+    print("   Standard threshold: 0.5 (probability of being human)")
     print()
 
 if __name__ == "__main__":

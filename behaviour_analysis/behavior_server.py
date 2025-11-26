@@ -221,7 +221,7 @@ def save_events():
 @app.route('/save_captcha_events', methods=['POST'])
 def save_captcha_events():
     """
-    Save events to captcha-specific CSV files (captcha1.csv, captcha2.csv, captcha3.csv)
+    Save events to captcha-specific CSV files and classify behavior using ML model
     
     Expected JSON format:
     {
@@ -231,6 +231,11 @@ def save_captcha_events():
         "metadata": {...},
         "success": true/false
     }
+    
+    Returns:
+        - success: bool
+        - classification: ML classification results (if events provided)
+        - message: Status message
     """
     try:
         data = request.json
@@ -266,6 +271,72 @@ def save_captcha_events():
         if captcha_type not in ['rotation', 'slider', 'temporal', 'question']:
             return jsonify({'error': 'captchaType must be rotation, slider, temporal, or question'}), 400
         
+        # ===== ML CLASSIFICATION =====
+        classification_result = None
+        if events and captcha_id in ['captcha1', 'captcha2', 'captcha3']:
+            try:
+                # Import ml_core for classification
+                import sys
+                scripts_dir = BASE_DIR / 'scripts'
+                sys.path.insert(0, str(scripts_dir))
+                from ml_core import predict_slider
+                import pandas as pd
+                
+                # Convert events to DataFrame format expected by ml_core
+                events_data = []
+                for event in events:
+                    events_data.append({
+                        'time_since_start': float(event.get('time_since_start', 0)),
+                        'time_since_last_event': float(event.get('time_since_last_event', 0)),
+                        'event_type': event.get('event_type', 'mousemove'),
+                        'client_x': float(event.get('client_x', 0)),
+                        'client_y': float(event.get('client_y', 0)),
+                        'velocity': float(event.get('velocity', 0))
+                    })
+                
+                df = pd.DataFrame(events_data)
+                
+                # Classify behavior using ml_core
+                is_human, confidence, details = predict_slider(df, metadata)
+                
+                decision = "human" if is_human else "bot"
+                
+                classification_result = {
+                    "session_id": session_id,
+                    "captcha_id": captcha_id,
+                    "is_human": bool(is_human),
+                    "prob_human": float(confidence),
+                    "decision": decision,
+                    "num_events": len(events),
+                    "details": details,
+                    "captcha_solved": success
+                }
+                
+                # Log classification result
+                print(f"\n{'='*60}")
+                print(f"CAPTCHA Behavior Classification")
+                print(f"{'='*60}")
+                print(f"Session ID: {session_id}")
+                print(f"CAPTCHA ID: {captcha_id}")
+                print(f"Decision: {decision.upper()}")
+                print(f"Probability (Human): {confidence:.3f}")
+                print(f"Events: {len(events)}")
+                print(f"CAPTCHA Solved: {success}")
+                print(f"{'='*60}\n")
+                
+            except Exception as e:
+                print(f"Warning: ML classification failed: {e}")
+                import traceback
+                traceback.print_exc()
+                # Continue with saving even if classification fails
+        
+        # Decide whether to save events for captcha1/2/3 based on classification
+        # For rotation/layer3, we always save as before.
+        should_save_events = True
+        if captcha_id in ['captcha1', 'captcha2', 'captcha3'] and classification_result is not None:
+            # Only append to captcha1/2/3 CSV if classified as human
+            should_save_events = bool(classification_result.get("is_human", False))
+
         # Ensure data directory exists
         if not os.path.exists(DATA_DIR):
             os.makedirs(DATA_DIR)
@@ -315,46 +386,60 @@ def save_captcha_events():
                 else:
                     print(f"WARNING: Error checking file headers: {e}. Will append data anyway.")
         
-        # Always use append mode ('a') to preserve existing data
-        # This ensures data from previous sessions is never overwritten
-        with open(csv_path, 'a', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, extrasaction='ignore')
-            
-            # Write header only if file is new or empty
-            if needs_header:
-                writer.writeheader()
-                if file_exists:
-                    print(f"Added headers to empty file: {csv_path}")
-                else:
-                    print(f"Created new CSV file with headers: {csv_path}")
-            
-            # Append events to CSV (this preserves all existing data)
-            for event in events:
-                # Merge event data with metadata
-                row = {**event}
-                row['user_agent'] = metadata.get('user_agent', '')
-                row['screen_width'] = metadata.get('screen_width', '')
-                row['screen_height'] = metadata.get('screen_height', '')
-                row['viewport_width'] = metadata.get('viewport_width', '')
-                row['viewport_height'] = metadata.get('viewport_height', '')
-                row['user_type'] = 'human'  # Default to human
-                row['challenge_type'] = f"{captcha_id}_{'success' if success else 'failed'}"
-                row['captcha_id'] = captcha_id
-                # Store full metadata as JSON string for rotation-specific features
-                row['metadata_json'] = json.dumps(metadata)
+        events_saved = 0
+        if should_save_events and events:
+            # Always use append mode ('a') to preserve existing data
+            # This ensures data from previous sessions is never overwritten
+            with open(csv_path, 'a', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, extrasaction='ignore')
                 
-                writer.writerow(row)
+                # Write header only if file is new or empty
+                if needs_header:
+                    writer.writeheader()
+                    if file_exists:
+                        print(f"Added headers to empty file: {csv_path}")
+                    else:
+                        print(f"Created new CSV file with headers: {csv_path}")
+                
+                # Append events to CSV (this preserves all existing data)
+                for event in events:
+                    # Merge event data with metadata
+                    row = {**event}
+                    row['user_agent'] = metadata.get('user_agent', '')
+                    row['screen_width'] = metadata.get('screen_width', '')
+                    row['screen_height'] = metadata.get('screen_height', '')
+                    row['viewport_width'] = metadata.get('viewport_width', '')
+                    row['viewport_height'] = metadata.get('viewport_height', '')
+                    row['user_type'] = 'human'  # Default to human
+                    row['challenge_type'] = f"{captcha_id}_{'success' if success else 'failed'}"
+                    row['captcha_id'] = captcha_id
+                    # Store full metadata as JSON string for rotation-specific features
+                    row['metadata_json'] = json.dumps(metadata)
+                    
+                    writer.writerow(row)
+                    events_saved += 1
+            
+            print(f"✓ Appended {events_saved} events to {csv_filename} (session: {session_id}, success: {success})")
+        else:
+            # Skip saving if classified as bot for captcha1/2/3
+            if captcha_id in ['captcha1', 'captcha2', 'captcha3'] and classification_result is not None:
+                print(f"⏭️  Skipping save for {captcha_id}: classified as BOT (session: {session_id})")
         
-        print(f"✓ Appended {len(events)} events to {csv_filename} (session: {session_id}, success: {success})")
-        
-        return jsonify({
+        response = {
             'success': True,
-            'message': f'Saved {len(events)} events to {csv_filename}',
+            'message': f'Saved {events_saved} events to {csv_filename}' if events_saved > 0 else 'Events not saved due to bot classification or empty events',
             'captcha_id': captcha_id,
             'session_id': session_id,
-            'events_saved': len(events),
+            'events_saved': events_saved,
             'file_path': csv_path
-        }), 200
+        }
+        
+        # Add classification result if available
+        if classification_result:
+            response['classification'] = classification_result
+            response['message'] += f' | Classified as {classification_result["decision"]} (confidence: {classification_result["prob_human"]:.3f})'
+        
+        return jsonify(response), 200
         
     except Exception as e:
         print(f"Error saving captcha events: {e}")

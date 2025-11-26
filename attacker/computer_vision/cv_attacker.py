@@ -32,6 +32,8 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 import uuid
 import json
+import os
+import requests
 
 # Add scripts directory to path to import ml_core
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -40,7 +42,7 @@ DATA_DIR = BASE_DIR / "data"  # Data directory for saving bot behavior
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 try:
-    from ml_core import predict_human_prob
+    from ml_core import predict_slider, predict_human_prob
     MODEL_AVAILABLE = True
 except ImportError:
     MODEL_AVAILABLE = False
@@ -90,7 +92,8 @@ class CVAttacker:
         self.headless = headless
         self.use_model_classification = use_model_classification and MODEL_AVAILABLE
         self.save_behavior_data = save_behavior_data
-        self.behavior_events = []  # Store mouse events for model classification
+        self.behavior_events = []  # Store mouse events for model classification (accumulated across all captchas)
+        self.all_behavior_events = []  # Store ALL events from all captcha attempts for combined classification
         self.detected_sliding_animal = None  # Store detected sliding animal for third captcha
         
         # Session tracking for data saving
@@ -765,10 +768,13 @@ class CVAttacker:
             'event_type': event_type,
             'client_x': x,
             'client_y': y,
-            'velocity': velocity
+            'velocity': velocity,
+            'captcha_id': self.current_captcha_id  # Tag event with current captcha
         }
         
         self.behavior_events.append(event)
+        # Also add to all_behavior_events for combined classification
+        self.all_behavior_events.append(event.copy())
     
     def classify_behavior(self) -> Optional[Dict]:
         """
@@ -895,6 +901,27 @@ class CVAttacker:
             logger.info(f"✓ Saved {len(df)} bot behavior events to {output_file}")
             logger.info(f"  Session ID: {self.session_id}")
             logger.info(f"  Captcha: {captcha_type}, Success: {success}")
+
+            # ------------------------------------------------------------------
+            # Also send events to behavior_server for unified logging/defense
+            # ------------------------------------------------------------------
+            try:
+                server_url = os.environ.get("BEHAVIOR_SERVER_URL", "http://localhost:5001/save_captcha_events")
+                payload = {
+                    "captcha_id": captcha_type,
+                    "session_id": self.session_id,
+                    "captchaType": "slider",  # CVAttacker here is primarily used for slider flows
+                    "events": self.behavior_events,
+                    "metadata": self.captcha_metadata or {},
+                    "success": bool(success),
+                }
+                resp = requests.post(server_url, json=payload, timeout=5)
+                if resp.ok:
+                    logger.info("✓ Sent behavior events to behavior_server for logging/classification")
+                else:
+                    logger.warning(f"⚠️  Failed to send behavior to behavior_server: {resp.status_code} {resp.text[:200]}")
+            except Exception as send_err:
+                logger.warning(f"⚠️  Error sending behavior to behavior_server: {send_err}")
             
         except Exception as e:
             logger.error(f"Error saving behavior data to CSV: {e}")
@@ -909,6 +936,8 @@ class CVAttacker:
         self.session_id = f"bot_session_{int(time.time() * 1000)}_{str(uuid.uuid4())[:8]}"
         self.session_start_time = time.time()
         self.current_captcha_id = captcha_id
+        # Clear behavior_events for this captcha (used for saving individual captcha data)
+        # But keep all_behavior_events for combined classification
         self.behavior_events = []
         self.captcha_metadata = {}
         logger.info(f"📝 Started new session: {self.session_id} for {captcha_id}")
@@ -2519,6 +2548,10 @@ class CVAttacker:
             'rotation_result': None
         }
         
+        # Initialize all_behavior_events for this attack session
+        # This will accumulate all events from captcha1, captcha2, captcha3
+        self.all_behavior_events = []
+        
         try:
             attack_url = self._with_attack_mode(url)
             logger.info(f"Navigating to {attack_url}")
@@ -2531,10 +2564,10 @@ class CVAttacker:
             logger.info("="*60)
             
             slider_success = False
-            slider_classification = None
             
             try:
                 # Start new session for slider captcha
+                # Note: We'll collect all events and classify at the end
                 self.start_new_session('captcha1')
                 
                 # Find slider CAPTCHA element
@@ -2555,13 +2588,7 @@ class CVAttacker:
                 if self.save_behavior_data:
                     self.save_behavior_to_csv('captcha1', slider_success)
                 
-                # Classify slider behavior
-                if self.use_model_classification:
-                    slider_classification = self.classify_behavior()
-                    result['slider_result']['model_classification'] = slider_classification
-                    if slider_classification:
-                        logger.info(f"\nSLIDER - ML Classification: {slider_classification['decision']} "
-                                  f"(probability: {slider_classification['prob_human']:.3f})")
+                # Don't classify yet - we'll combine all events and classify at the end
                 
                 # Wait for slider to complete and success message to appear
                 time.sleep(2)
@@ -2589,7 +2616,6 @@ class CVAttacker:
             logger.info("="*60)
             
             rotation_success = False
-            rotation_classification = None
             
             try:
                 # Generic navigation: Look for Next/Skip/Continue button
@@ -2670,13 +2696,7 @@ class CVAttacker:
                 else:
                     logger.warning("⚠️ No animal was detected during monitoring")
                 
-                # Classify rotation behavior
-                if self.use_model_classification:
-                    rotation_classification = self.classify_behavior()
-                    result['rotation_result']['model_classification'] = rotation_classification
-                    if rotation_classification:
-                        logger.info(f"\nROTATION - ML Classification: {rotation_classification['decision']} "
-                                  f"(probability: {rotation_classification['prob_human']:.3f})")
+                # Don't classify yet - we'll combine all events and classify at the end
                 
             except Exception as e:
                 logger.error(f"Error solving rotation puzzle: {e}")
@@ -2785,12 +2805,70 @@ class CVAttacker:
             # Overall success if all solved
             result['success'] = slider_success and (rotation_success or third_captcha_success)
             
-            # Overall model classification (use the most recent, or combine if needed)
-            if self.use_model_classification:
-                if rotation_classification:
-                    result['model_classification'] = rotation_classification
-                elif slider_classification:
-                    result['model_classification'] = slider_classification
+            # ===== CLASSIFY COMBINED BEHAVIOR =====
+            # Collect all behavior events from all captcha attempts and classify once
+            # Similar to how training combines captcha1.csv, captcha2.csv, captcha3.csv
+            if self.use_model_classification and self.all_behavior_events:
+                logger.info("\n" + "="*60)
+                logger.info("CLASSIFYING COMBINED BEHAVIOR DATA")
+                logger.info("="*60)
+                
+                try:
+                    # Convert all collected events to DataFrame
+                    # This combines events from captcha1, captcha2, captcha3 (if attempted)
+                    # Similar to how train_slider_classifier.py combines multiple CSV files
+                    df_combined = pd.DataFrame(self.all_behavior_events)
+                    
+                    if len(df_combined) > 0:
+                        # Count events by captcha_id
+                        captcha1_count = len([e for e in self.all_behavior_events if e.get('captcha_id') == 'captcha1'])
+                        captcha2_count = len([e for e in self.all_behavior_events if e.get('captcha_id') == 'captcha2'])
+                        captcha3_count = len([e for e in self.all_behavior_events if e.get('captcha_id') == 'captcha3'])
+                        
+                        logger.info(f"Total events collected: {len(df_combined)}")
+                        logger.info(f"  - Events from captcha1: {captcha1_count}")
+                        logger.info(f"  - Events from captcha2: {captcha2_count}")
+                        logger.info(f"  - Events from captcha3: {captcha3_count}")
+                        logger.info(f"\nCombining all events (like training combines captcha1.csv + captcha2.csv + captcha3.csv)...")
+                        
+                        # Classify the combined dataset using the ML model
+                        # This is similar to how train_slider_classifier.py combines all CSV files
+                        # and passes the combined dataset to extract_slider_features
+                        prob_human = predict_human_prob(df_combined)
+                        decision = "human" if prob_human >= 0.7 else "bot"
+                        
+                        result['model_classification'] = {
+                            'prob_human': float(prob_human),
+                            'decision': decision,
+                            'num_events': len(df_combined),
+                            'is_human': prob_human >= 0.7,
+                            'events_by_captcha': {
+                                'captcha1': captcha1_count,
+                                'captcha2': captcha2_count,
+                                'captcha3': captcha3_count
+                            }
+                        }
+                        
+                        logger.info(f"\n✓ Combined ML Classification:")
+                        logger.info(f"   Decision: {decision.upper()}")
+                        logger.info(f"   Probability (Human): {prob_human:.3f}")
+                        logger.info(f"   Total Events: {len(df_combined)}")
+                        logger.info(f"   Is Human: {'✓ YES' if prob_human >= 0.5 else '✗ NO'}")
+                    else:
+                        logger.warning("No behavior events to classify")
+                        result['model_classification'] = None
+                        
+                except Exception as e:
+                    logger.error(f"Error classifying combined behavior: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    result['model_classification'] = None
+            else:
+                if not self.use_model_classification:
+                    logger.info("Model classification is disabled")
+                elif not self.all_behavior_events:
+                    logger.warning("No behavior events collected for classification")
+                result['model_classification'] = None
             
             result['attempts'] = 1
             
@@ -2811,7 +2889,7 @@ class CVAttacker:
 
 def main():
     """Example usage of the CV attacker"""
-    attacker = CVAttacker(headless=False, use_model_classification=True)
+    attacker = CVAttacker(headless=False, use_model_classification=True, save_behavior_data=True)
     
     try:
         # Attack the local CAPTCHA system
@@ -2825,8 +2903,23 @@ def main():
         print(f"Puzzle Type: {result['puzzle_type']}")
         print(f"Attempts: {result['attempts']}")
         
+        # Display ML Classification Results
+        print("\n" + "-"*60)
+        print("ML CLASSIFICATION RESULTS")
+        print("-"*60)
+        
+        # Overall model classification (if available)
+        if result.get('model_classification'):
+            overall_class = result['model_classification']
+            print(f"\nOverall Classification:")
+            print(f"  Decision: {overall_class['decision'].upper()}")
+            print(f"  Probability (Human): {overall_class['prob_human']:.3f}")
+            print(f"  Number of Events: {overall_class['num_events']}")
+            print(f"  Is Human: {'✓ YES' if overall_class['is_human'] else '✗ NO'}")
+        
         if result.get('error'):
             print(f"\nError: {result['error']}")
+        
         print("="*60)
         
     finally:

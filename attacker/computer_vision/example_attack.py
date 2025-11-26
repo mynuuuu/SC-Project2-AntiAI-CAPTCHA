@@ -36,6 +36,19 @@ def attack_single_captcha(url: str, headless: bool = False):
         print(f"Attempts: {result['attempts']}")
         print(f"Time Elapsed: {elapsed_time:.2f} seconds")
         
+        # Display ML Classification Results
+        print("\n" + "-"*60)
+        print("ML CLASSIFICATION RESULTS")
+        print("-"*60)
+        
+        # Overall model classification (if available)
+        if result.get('model_classification'):
+            overall_class = result['model_classification']
+            print(f"\nOverall Classification:")
+            print(f"  Decision: {overall_class['decision'].upper()}")
+            print(f"  Probability (Human): {overall_class['prob_human']:.3f}")
+            print(f"  Number of Events: {overall_class['num_events']}")
+            print(f"  Is Human: {'✓ YES' if overall_class['is_human'] else '✗ NO'}")
         
         if result.get('error'):
             print(f"\nError: {result['error']}")
@@ -87,6 +100,12 @@ def attack_multiple_captchas(url: str, num_attempts: int = 5, headless: bool = F
                 print(f"✗ Failed (Time: {elapsed_time:.2f}s)")
                 if result['error']:
                     print(f"  Error: {result['error']}")
+            
+            # Show classification for each attempt
+            if result.get('slider_result') and result['slider_result'].get('model_classification'):
+                slider_class = result['slider_result']['model_classification']
+                print(f"  ML Classification: {slider_class['decision'].upper()} "
+                      f"(prob: {slider_class['prob_human']:.3f})")
             
             # Wait between attempts
             if i < num_attempts - 1:

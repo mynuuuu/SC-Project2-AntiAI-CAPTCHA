@@ -1,7 +1,7 @@
 # server.py
 """
 FastAPI server for CAPTCHA behavior classification
-Uses multi-layer ML models to predict human vs bot behavior
+Uses slider classifier ML model to predict human vs bot behavior
 """
 
 from fastapi import FastAPI, HTTPException
@@ -15,10 +15,11 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from ml_core import predict_layer, predict_multi_layer
+from ml_core import predict_slider, predict_layer, predict_human_prob
 
 app = FastAPI(
     title="Anti-AI CAPTCHA ML Server",
-    description="Multi-layer behavioral analysis for CAPTCHA verification",
+    description="CAPTCHA behavioral analysis for human vs bot classification",
     version="2.0"
 )
 
@@ -33,13 +34,9 @@ class Event(BaseModel):
 
 class SessionPayload(BaseModel):
     session_id: str
-    captcha_id: str  # 'captcha1', 'captcha2', 'captcha3', 'rotation_layer', or 'layer3_question'
+    captcha_id: str  # 'captcha1', 'captcha2', 'captcha3' (slider captchas)
     events: List[Event]
     metadata: Optional[Dict] = None  # Optional metadata dict
-
-class MultiLayerPayload(BaseModel):
-    session_id: str
-    layer_predictions: Dict[str, Dict]  # {layer_name: {is_human: bool, confidence: float}}
 
 @app.post("/classify_session")
 def classify_session(payload: SessionPayload):
@@ -83,35 +80,6 @@ def classify_session(payload: SessionPayload):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
-@app.post("/classify_multi_layer")
-def classify_multi_layer(payload: MultiLayerPayload):
-    """
-    Combine predictions from multiple layers
-    
-    Useful when a user has completed multiple captcha layers
-    and you want an overall assessment
-    """
-    try:
-        # Convert payload to expected format
-        layer_predictions = {
-            layer: (pred['is_human'], pred['confidence'])
-            for layer, pred in payload.layer_predictions.items()
-        }
-        
-        is_human, overall_confidence, details = predict_multi_layer(layer_predictions)
-        
-        decision = "human" if is_human else "bot"
-        
-        return {
-            "session_id": payload.session_id,
-            "is_human": bool(is_human),
-            "prob_human": float(overall_confidence),
-            "decision": decision,
-            "details": details,
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Multi-layer prediction error: {str(e)}")
 
 @app.get("/health")
 def health_check():
@@ -122,14 +90,14 @@ def health_check():
 def list_available_models():
     """List available ML models"""
     from pathlib import Path
-    from ml_core import BASE, MODELS_DIR
+    from ml_core import MODELS_DIR
     
     models = []
-    for model_file in MODELS_DIR.glob("*_ensemble_model.pkl"):
-        layer_type = model_file.stem.replace("_ensemble_model", "")
+    # Check for slider classifier models
+    if (MODELS_DIR / "slider_classifier_ensemble.pkl").exists():
         models.append({
-            "layer_type": layer_type,
-            "file": str(model_file.name),
+            "model_type": "slider_classifier",
+            "file": "slider_classifier_ensemble.pkl",
             "status": "available"
         })
     
@@ -137,6 +105,110 @@ def list_available_models():
         "models": models,
         "total": len(models)
     }
+
+# Endpoint for frontend to save and classify behavior
+@app.post("/save_captcha_events")
+def save_and_classify_captcha_events(payload: dict):
+    """
+    Save captcha events and classify behavior using ML model
+    This is called by the frontend when a user (human or bot) solves a CAPTCHA
+    
+    Expected payload format (from frontend):
+    {
+        "captcha_id": "captcha1",
+        "session_id": "session_...",
+        "captchaType": "slider",
+        "events": [...],
+        "metadata": {...},
+        "success": true/false
+    }
+    
+    Returns:
+        - success: bool
+        - classification: ML classification results
+        - message: Status message
+    """
+    try:
+        # Extract data from frontend payload
+        captcha_id = payload.get('captcha_id', 'captcha1')
+        session_id = payload.get('session_id', 'unknown')
+        events = payload.get('events', [])
+        metadata = payload.get('metadata', {})
+        success = payload.get('success', False)
+        
+        if not events:
+            return {
+                "success": False,
+                "error": "No events provided",
+                "message": "No behavior events to classify"
+            }
+        
+        # Convert events to DataFrame format expected by ml_core
+        # Frontend sends events with different field names, need to map them
+        events_data = []
+        for event in events:
+            # Map frontend event format to ml_core expected format
+            events_data.append({
+                'time_since_start': float(event.get('time_since_start', 0)),
+                'time_since_last_event': float(event.get('time_since_last_event', 0)),
+                'event_type': event.get('event_type', 'mousemove'),
+                'client_x': float(event.get('client_x', 0)),
+                'client_y': float(event.get('client_y', 0)),
+                'velocity': float(event.get('velocity', 0))
+            })
+        
+        df = pd.DataFrame(events_data)
+        
+        # Classify behavior using ml_core
+        is_human, confidence, details = predict_slider(df, metadata)
+        
+        decision = "human" if is_human else "bot"
+        
+        # Prepare response
+        classification_result = {
+            "session_id": session_id,
+            "captcha_id": captcha_id,
+            "is_human": bool(is_human),
+            "prob_human": float(confidence),
+            "decision": decision,
+            "num_events": len(events),
+            "details": details,
+            "captcha_solved": success
+        }
+        
+        # Log classification result
+        print(f"\n{'='*60}")
+        print(f"CAPTCHA Behavior Classification")
+        print(f"{'='*60}")
+        print(f"Session ID: {session_id}")
+        print(f"CAPTCHA ID: {captcha_id}")
+        print(f"Decision: {decision.upper()}")
+        print(f"Probability (Human): {confidence:.3f}")
+        print(f"Events: {len(events)}")
+        print(f"CAPTCHA Solved: {success}")
+        print(f"{'='*60}\n")
+        
+        return {
+            "success": True,
+            "classification": classification_result,
+            "message": f"Behavior classified as {decision} (confidence: {confidence:.3f})"
+        }
+    
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Classification error: {str(e)}"
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Server error: {str(e)}"
+        }
+
 
 # Legacy endpoint for backward compatibility
 @app.post("/classify")
