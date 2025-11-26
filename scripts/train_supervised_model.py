@@ -60,12 +60,15 @@ def load_and_label_data(human_file, bot_file, captcha_id_filter=None):
 
 def extract_features(df, layer_type):
     """
-    Extract features from sessions based on layer type
+    Extract features from sessions - only supports slider classifier
     """
-    from ml_core import extract_slider_features, extract_rotation_features, extract_question_features
+    from ml_core import extract_slider_features
     
     print("\n🔧 Extracting Features...")
     print("-" * 60)
+    
+    if layer_type != 'slider_layer1':
+        raise ValueError(f"Only 'slider_layer1' is supported. Got: {layer_type}")
     
     all_features = []
     all_labels = []
@@ -85,15 +88,8 @@ def extract_features(df, layer_type):
             # Get label (should be same for all rows in session)
             label = first_row['label']
             
-            # Extract features based on layer type
-            if layer_type == 'slider_layer1':
-                features = extract_slider_features(group, metadata)
-            elif layer_type == 'rotation_layer2':
-                features = extract_rotation_features(group, metadata)
-            elif layer_type == 'layer3_question':
-                features = extract_question_features(group, metadata)
-            else:
-                raise ValueError(f"Unknown layer type: {layer_type}")
+            # Extract slider features
+            features = extract_slider_features(group, metadata)
             
             all_features.append(features)
             all_labels.append(label)
@@ -205,10 +201,10 @@ def train_supervised_models(X_train, y_train, X_test, y_test, feature_names):
     return models
 
 def main():
-    parser = argparse.ArgumentParser(description='Train supervised bot detection model')
-    parser.add_argument('--layer', required=True, 
-                       choices=['slider_layer1', 'rotation_layer2', 'layer3_question'],
-                       help='Layer type to train')
+    parser = argparse.ArgumentParser(description='Train supervised bot detection model (slider classifier only)')
+    parser.add_argument('--layer', default='slider_layer1', 
+                       choices=['slider_layer1'],
+                       help='Layer type to train (only slider_layer1 supported)')
     parser.add_argument('--human-file', required=True, help='Human data CSV file')
     parser.add_argument('--bot-file', required=True, help='Bot data CSV file')
     parser.add_argument('--captcha-id', default=None, help='Filter by captcha_id (optional)')
@@ -230,12 +226,8 @@ def main():
     # Extract features
     X, y, session_ids = extract_features(df, args.layer)
     
-    # Get feature names from existing model (or use default)
-    try:
-        existing_model = joblib.load(MODELS_DIR / f"{args.layer}_ensemble_model.pkl")
-        feature_names = existing_model.get('feature_names', [f'feature_{i}' for i in range(X.shape[1])])
-    except:
-        feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+    # Get feature names - use default since we don't store them in the model
+    feature_names = [f'feature_{i}' for i in range(X.shape[1])]
     
     print(f"\nFeatures: {len(feature_names)}")
     
@@ -263,27 +255,11 @@ def main():
     print("-" * 60)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     
-    # Save RF
-    rf_path = MODELS_DIR / f"{args.layer}_rf_model_supervised.pkl"
-    rf_ensemble = {
-        'model': models['random_forest'],
-        'scaler': scaler,
-        'feature_names': feature_names,
-        'model_type': 'supervised_random_forest'
-    }
-    joblib.dump(rf_ensemble, rf_path)
-    print(f"✓ Random Forest saved to: {rf_path}")
-    
-    # Save GB
-    gb_path = MODELS_DIR / f"{args.layer}_gb_model_supervised.pkl"
-    gb_ensemble = {
-        'model': models['gradient_boosting'],
-        'scaler': scaler,
-        'feature_names': feature_names,
-        'model_type': 'supervised_gradient_boosting'
-    }
-    joblib.dump(gb_ensemble, gb_path)
-    print(f"✓ Gradient Boosting saved to: {gb_path}")
+    # Note: This script is for reference. The actual training is done by train_slider_classifier.py
+    # which saves models as slider_classifier_*.pkl
+    print("\n⚠️  Note: This script is for reference.")
+    print("   The main training script is train_slider_classifier.py")
+    print("   which saves models as slider_classifier_*.pkl")
     
     print("\n" + "=" * 80)
     print("✅ SUPERVISED MODEL TRAINING COMPLETE!")

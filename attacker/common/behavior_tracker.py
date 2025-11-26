@@ -20,7 +20,7 @@ DATA_DIR = BASE_DIR / "data"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 try:
-    from ml_core import predict_layer, predict_human_prob
+    from ml_core import predict_slider, predict_layer, predict_human_prob
     MODEL_AVAILABLE = True
 except ImportError:
     MODEL_AVAILABLE = False
@@ -43,7 +43,8 @@ class BehaviorTracker:
         """
         self.use_model_classification = use_model_classification and MODEL_AVAILABLE
         self.save_behavior_data = save_behavior_data
-        self.behavior_events: List[Dict] = []
+        self.behavior_events: List[Dict] = []  # Per-captcha events (for saving)
+        self.all_behavior_events: List[Dict] = []  # All events across all captchas (for combined classification)
         
         # Session tracking
         self.session_id: Optional[str] = None
@@ -59,7 +60,7 @@ class BehaviorTracker:
         Start a new session for behavior tracking
         
         Args:
-            captcha_id: ID of the captcha being solved (e.g., 'captcha1', 'rotation_layer', 'layer3_question')
+            captcha_id: ID of the captcha being solved (e.g., 'captcha1', 'captcha2', 'captcha3')
         """
         self.session_id = f"bot_session_{int(time.time() * 1000)}_{str(uuid.uuid4())[:8]}"
         self.session_start_time = time.time()
@@ -91,38 +92,70 @@ class BehaviorTracker:
             'event_type': event_type,
             'client_x': x,
             'client_y': y,
-            'velocity': velocity
+            'velocity': velocity,
+            'captcha_id': self.current_captcha_id  # Tag event with current captcha
         }
         
         self.behavior_events.append(event)
+        # Also add to all_behavior_events for combined classification (accumulated across all layers)
+        self.all_behavior_events.append(event.copy())
     
-    def classify_behavior(self, captcha_id: Optional[str] = None, metadata: Optional[Dict] = None) -> Optional[Dict]:
+    def classify_behavior(self, captcha_id: Optional[str] = None, metadata: Optional[Dict] = None, use_combined: bool = False) -> Optional[Dict]:
         """
         Classify the captured behavior using the ML model
         
         Args:
             captcha_id: ID of the captcha (if None, uses current_captcha_id)
             metadata: Optional metadata dict for classification
+            use_combined: If True, classify all events from all captchas combined (like training)
         
         Returns:
             Dictionary with classification results, or None if model unavailable
         """
-        if not self.use_model_classification or not self.behavior_events:
+        # Determine which events to use
+        if use_combined and self.all_behavior_events:
+            events_to_use = self.all_behavior_events
+            logger.info(f"Using combined events from all captchas: {len(events_to_use)} total events")
+        elif self.behavior_events:
+            events_to_use = self.behavior_events
+            logger.info(f"Using current captcha events: {len(events_to_use)} events")
+        else:
+            if not self.use_model_classification:
+                return None
+            logger.warning("No behavior events to classify")
+            return None
+        
+        if not self.use_model_classification:
             return None
         
         try:
             # Convert events to DataFrame
-            df = pd.DataFrame(self.behavior_events)
+            df = pd.DataFrame(events_to_use)
             
             if len(df) == 0:
                 logger.warning("No behavior events to classify")
                 return None
             
             # Use captcha_id from parameter or current session
+            # Note: Only slider captchas (captcha1, captcha2, captcha3) are supported
             captcha_id = captcha_id or self.current_captcha_id or 'captcha1'
             
-            # Use predict_layer for layer-specific classification
-            is_human, confidence, details = predict_layer(df, captcha_id, metadata)
+            # Ensure captcha_id is a slider captcha
+            if captcha_id not in ['captcha1', 'captcha2', 'captcha3']:
+                logger.warning(f"Captcha ID {captcha_id} not supported, defaulting to captcha1")
+                captcha_id = 'captcha1'
+            
+            # Use predict_slider for slider classifier
+            # This combines events from all captchas (like training combines captcha1.csv + captcha2.csv + captcha3.csv)
+            is_human, confidence, details = predict_slider(df, metadata)
+            
+            # Count events by captcha_id if using combined
+            events_by_captcha = {}
+            if use_combined:
+                for event in events_to_use:
+                    cid = event.get('captcha_id', 'unknown')
+                    events_by_captcha[cid] = events_by_captcha.get(cid, 0) + 1
+                details['events_by_captcha'] = events_by_captcha
             
             result = {
                 'prob_human': float(confidence),
@@ -147,7 +180,7 @@ class BehaviorTracker:
         Save bot behavior data to CSV file matching finalized human data format (bot_captcha1.csv)
         
         Args:
-            captcha_id: ID of the captcha ('captcha1', 'captcha2', 'captcha3', 'rotation_layer', 'layer3_question')
+            captcha_id: ID of the captcha ('captcha1', 'captcha2', 'captcha3')
             success: Whether the captcha was solved successfully
             metadata: Optional metadata (not saved - format matches bot_captcha1.csv without metadata_json)
         """
@@ -155,15 +188,13 @@ class BehaviorTracker:
             return
         
         try:
-            # Determine output file based on captcha_id
+            # Determine output file based on captcha_id (only slider captchas supported)
             if captcha_id in ['captcha1', 'captcha2', 'captcha3']:
-                output_file = DATA_DIR / f"{captcha_id}_bot.csv"
-            elif captcha_id == 'rotation_layer':
-                output_file = DATA_DIR / "rotation_layer_bot.csv"
-            elif captcha_id == 'layer3_question':
-                output_file = DATA_DIR / "layer3_question_bot.csv"
-            else:
                 output_file = DATA_DIR / f"bot_{captcha_id}.csv"
+            else:
+                # Default to captcha1 if unknown
+                logger.warning(f"Unknown captcha_id {captcha_id}, defaulting to captcha1")
+                output_file = DATA_DIR / "bot_captcha1.csv"
             
             # Create DataFrame from behavior events
             df = pd.DataFrame(self.behavior_events)

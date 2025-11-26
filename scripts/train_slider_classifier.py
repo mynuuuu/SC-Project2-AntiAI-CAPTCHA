@@ -29,9 +29,6 @@ from ml_core import extract_slider_features
 
 warnings.filterwarnings('ignore')
 
-# ============================================================
-# STEP 1: Load Human Data
-# ============================================================
 print("=" * 60)
 print("Slider Captcha Classifier Training")
 print("=" * 60)
@@ -44,9 +41,7 @@ for filename in human_files:
     filepath = DATA_DIR / filename
     if filepath.exists():
         try:
-            # Read CSV with error handling for inconsistent columns
             df = pd.read_csv(filepath, on_bad_lines='skip', engine='python')
-            # Add captcha_id if missing (for compatibility)
             if 'captcha_id' not in df.columns:
                 captcha_id = filename.replace('.csv', '')
                 df['captcha_id'] = captcha_id
@@ -54,8 +49,7 @@ for filename in human_files:
                 df_human_list.append(df)
                 print(f"  ✓ {filename}: {len(df)} rows, {df['session_id'].nunique()} sessions")
         except Exception as e:
-            print(f"  ⚠️  Error reading {filename}: {e}")
-            # Try with different parameters
+            print(f"Error reading {filename}: {e}")
             try:
                 df = pd.read_csv(filepath, error_bad_lines=False, warn_bad_lines=False, engine='python')
                 if 'captcha_id' not in df.columns:
@@ -67,7 +61,7 @@ for filename in human_files:
             except:
                 print(f"  ✗ Failed to read {filename}, skipping...")
     else:
-        print(f"  ⚠️  {filename} not found, skipping...")
+        print(f"{filename} not found, skipping...")
 
 if not df_human_list:
     print("\n✗ Error: No human data found!")
