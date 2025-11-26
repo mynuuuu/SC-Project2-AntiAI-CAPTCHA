@@ -221,7 +221,7 @@ def save_events():
 @app.route('/save_captcha_events', methods=['POST'])
 def save_captcha_events():
     """
-    Save events to captcha-specific CSV files (captcha1.csv, captcha2.csv, captcha3.csv)
+    Save events to captcha-specific CSV files and classify behavior using ML model
     
     Expected JSON format:
     {
@@ -231,6 +231,11 @@ def save_captcha_events():
         "metadata": {...},
         "success": true/false
     }
+    
+    Returns:
+        - success: bool
+        - classification: ML classification results (if events provided)
+        - message: Status message
     """
     try:
         data = request.json
@@ -265,6 +270,65 @@ def save_captcha_events():
         
         if captcha_type not in ['rotation', 'slider', 'temporal', 'question']:
             return jsonify({'error': 'captchaType must be rotation, slider, temporal, or question'}), 400
+        
+        # ===== ML CLASSIFICATION =====
+        classification_result = None
+        if events and captcha_id in ['captcha1', 'captcha2', 'captcha3']:
+            try:
+                # Import ml_core for classification
+                import sys
+                scripts_dir = BASE_DIR / 'scripts'
+                sys.path.insert(0, str(scripts_dir))
+                from ml_core import predict_slider
+                import pandas as pd
+                
+                # Convert events to DataFrame format expected by ml_core
+                events_data = []
+                for event in events:
+                    events_data.append({
+                        'time_since_start': float(event.get('time_since_start', 0)),
+                        'time_since_last_event': float(event.get('time_since_last_event', 0)),
+                        'event_type': event.get('event_type', 'mousemove'),
+                        'client_x': float(event.get('client_x', 0)),
+                        'client_y': float(event.get('client_y', 0)),
+                        'velocity': float(event.get('velocity', 0))
+                    })
+                
+                df = pd.DataFrame(events_data)
+                
+                # Classify behavior using ml_core
+                is_human, confidence, details = predict_slider(df, metadata)
+                
+                decision = "human" if is_human else "bot"
+                
+                classification_result = {
+                    "session_id": session_id,
+                    "captcha_id": captcha_id,
+                    "is_human": bool(is_human),
+                    "prob_human": float(confidence),
+                    "decision": decision,
+                    "num_events": len(events),
+                    "details": details,
+                    "captcha_solved": success
+                }
+                
+                # Log classification result
+                print(f"\n{'='*60}")
+                print(f"CAPTCHA Behavior Classification")
+                print(f"{'='*60}")
+                print(f"Session ID: {session_id}")
+                print(f"CAPTCHA ID: {captcha_id}")
+                print(f"Decision: {decision.upper()}")
+                print(f"Probability (Human): {confidence:.3f}")
+                print(f"Events: {len(events)}")
+                print(f"CAPTCHA Solved: {success}")
+                print(f"{'='*60}\n")
+                
+            except Exception as e:
+                print(f"Warning: ML classification failed: {e}")
+                import traceback
+                traceback.print_exc()
+                # Continue with saving even if classification fails
         
         # Ensure data directory exists
         if not os.path.exists(DATA_DIR):
@@ -347,14 +411,21 @@ def save_captcha_events():
         
         print(f"✓ Appended {len(events)} events to {csv_filename} (session: {session_id}, success: {success})")
         
-        return jsonify({
+        response = {
             'success': True,
             'message': f'Saved {len(events)} events to {csv_filename}',
             'captcha_id': captcha_id,
             'session_id': session_id,
             'events_saved': len(events),
             'file_path': csv_path
-        }), 200
+        }
+        
+        # Add classification result if available
+        if classification_result:
+            response['classification'] = classification_result
+            response['message'] += f' | Classified as {classification_result["decision"]} (confidence: {classification_result["prob_human"]:.3f})'
+        
+        return jsonify(response), 200
         
     except Exception as e:
         print(f"Error saving captcha events: {e}")

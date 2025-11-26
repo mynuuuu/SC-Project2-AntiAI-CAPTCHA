@@ -270,12 +270,32 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
         const result = await response.json();
         
         if (result.success) {
-          console.log(`✓ Data saved to ${resolvedCaptchaId}.csv`);
+          console.log(`✓ Data saved and classified`);
+          
+          // Display ML classification results
+          if (result.classification) {
+            const classification = result.classification;
+            console.log(`\n${'='.repeat(60)}`);
+            console.log(`ML CLASSIFICATION RESULTS`);
+            console.log(`${'='.repeat(60)}`);
+            console.log(`Decision: ${classification.decision.toUpperCase()}`);
+            console.log(`Probability (Human): ${classification.prob_human.toFixed(3)}`);
+            console.log(`Total Events: ${classification.num_events}`);
+            console.log(`Is Human: ${classification.is_human ? '✓ YES' : '✗ NO'}`);
+            console.log(`${'='.repeat(60)}\n`);
+            
+            // You can use classification.is_human to make decisions
+            // For example, reject if classified as bot even if CAPTCHA was solved correctly
+            if (!classification.is_human && classification.prob_human < 0.5) {
+              console.warn('⚠️  WARNING: Behavior classified as BOT-like!');
+              // You could add logic here to reject the solution even if position is correct
+            }
+          }
         } else {
-          console.error('Failed to save data:', result.error);
+          console.error('Failed to save/classify data:', result.error);
         }
       } catch (error) {
-        console.error('Error saving data:', error);
+        console.error('Error saving/classifying data:', error);
       }
     } else if (!shouldLogBehavior) {
       console.log('Behavior logging skipped (not running via npm start).');

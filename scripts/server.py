@@ -99,6 +99,110 @@ def list_available_models():
         "total": len(models)
     }
 
+# Endpoint for frontend to save and classify behavior
+@app.post("/save_captcha_events")
+def save_and_classify_captcha_events(payload: dict):
+    """
+    Save captcha events and classify behavior using ML model
+    This is called by the frontend when a user (human or bot) solves a CAPTCHA
+    
+    Expected payload format (from frontend):
+    {
+        "captcha_id": "captcha1",
+        "session_id": "session_...",
+        "captchaType": "slider",
+        "events": [...],
+        "metadata": {...},
+        "success": true/false
+    }
+    
+    Returns:
+        - success: bool
+        - classification: ML classification results
+        - message: Status message
+    """
+    try:
+        # Extract data from frontend payload
+        captcha_id = payload.get('captcha_id', 'captcha1')
+        session_id = payload.get('session_id', 'unknown')
+        events = payload.get('events', [])
+        metadata = payload.get('metadata', {})
+        success = payload.get('success', False)
+        
+        if not events:
+            return {
+                "success": False,
+                "error": "No events provided",
+                "message": "No behavior events to classify"
+            }
+        
+        # Convert events to DataFrame format expected by ml_core
+        # Frontend sends events with different field names, need to map them
+        events_data = []
+        for event in events:
+            # Map frontend event format to ml_core expected format
+            events_data.append({
+                'time_since_start': float(event.get('time_since_start', 0)),
+                'time_since_last_event': float(event.get('time_since_last_event', 0)),
+                'event_type': event.get('event_type', 'mousemove'),
+                'client_x': float(event.get('client_x', 0)),
+                'client_y': float(event.get('client_y', 0)),
+                'velocity': float(event.get('velocity', 0))
+            })
+        
+        df = pd.DataFrame(events_data)
+        
+        # Classify behavior using ml_core
+        is_human, confidence, details = predict_slider(df, metadata)
+        
+        decision = "human" if is_human else "bot"
+        
+        # Prepare response
+        classification_result = {
+            "session_id": session_id,
+            "captcha_id": captcha_id,
+            "is_human": bool(is_human),
+            "prob_human": float(confidence),
+            "decision": decision,
+            "num_events": len(events),
+            "details": details,
+            "captcha_solved": success
+        }
+        
+        # Log classification result
+        print(f"\n{'='*60}")
+        print(f"CAPTCHA Behavior Classification")
+        print(f"{'='*60}")
+        print(f"Session ID: {session_id}")
+        print(f"CAPTCHA ID: {captcha_id}")
+        print(f"Decision: {decision.upper()}")
+        print(f"Probability (Human): {confidence:.3f}")
+        print(f"Events: {len(events)}")
+        print(f"CAPTCHA Solved: {success}")
+        print(f"{'='*60}\n")
+        
+        return {
+            "success": True,
+            "classification": classification_result,
+            "message": f"Behavior classified as {decision} (confidence: {confidence:.3f})"
+        }
+    
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Classification error: {str(e)}"
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Server error: {str(e)}"
+        }
+
+
 # Legacy endpoint for backward compatibility
 @app.post("/classify")
 def classify_legacy(payload: SessionPayload):
