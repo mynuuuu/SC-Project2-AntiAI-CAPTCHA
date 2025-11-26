@@ -8,6 +8,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import pandas as pd
 from typing import List, Optional, Dict
+import sys
+import os
+
+# Add current directory to sys.path to allow importing ml_core
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from ml_core import predict_layer, predict_multi_layer
 
 app = FastAPI(
@@ -66,8 +72,8 @@ def classify_session(payload: SessionPayload):
         return {
             "session_id": payload.session_id,
             "captcha_id": payload.captcha_id,
-            "is_human": is_human,
-            "prob_human": confidence,
+            "is_human": bool(is_human),
+            "prob_human": float(confidence),
             "decision": decision,
             "details": details,
         }
@@ -98,8 +104,8 @@ def classify_multi_layer(payload: MultiLayerPayload):
         
         return {
             "session_id": payload.session_id,
-            "is_human": is_human,
-            "prob_human": overall_confidence,
+            "is_human": bool(is_human),
+            "prob_human": float(overall_confidence),
             "decision": decision,
             "details": details,
         }
