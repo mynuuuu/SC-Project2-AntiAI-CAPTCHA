@@ -2,6 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import './DialRotationCaptcha.css';
 import useBehaviorTracking from './useBehaviorTracking';
 import { shouldCaptureBehavior } from './utils/behaviorMode';
+import { BEHAVIOR_API } from './config/apiConfig';
 
 const TOLERANCE = 15; // degrees tolerance for correct alignment
 const CAPTCHA_ID = 'captcha2';
@@ -300,7 +301,7 @@ function DialRotationCaptcha({ onSuccess }) {
       };
 
       try {
-        const serverUrl = 'http://localhost:5001/save_captcha_events';
+        const serverUrl = BEHAVIOR_API.saveCaptchaEvents;
         const response = await fetch(serverUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -17,8 +17,25 @@ CORS(app)  # Enable CORS for web interface communication
 
 # Configuration - Use absolute path based on script location
 BASE_DIR = Path(__file__).resolve().parent.parent  # Go up from behaviour_analysis/ to project root
-DATA_DIR = str(BASE_DIR / 'data')  # Project root / data folder
-CSV_FILENAME = 'user_behavior_events.csv'
+DEFAULT_PORT = 5001
+SERVICE_NAME = os.environ.get('SERVICE_NAME', 'Behavior Data Collection Server')
+DEBUG_MODE = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+
+
+def resolve_port(default_port: int) -> int:
+    """Return a valid integer port even if PORT env var is missing/blank."""
+    raw_port = os.environ.get('PORT')
+    if raw_port is None or raw_port.strip() == '':
+        return default_port
+    try:
+        return int(raw_port)
+    except ValueError as exc:
+        raise ValueError(f"Environment variable PORT must be an integer, got '{raw_port}'") from exc
+
+
+PORT = resolve_port(DEFAULT_PORT)
+DATA_DIR = os.environ.get('DATA_DIR', str(BASE_DIR / 'data'))  # Can be overridden for prod disks
+CSV_FILENAME = os.environ.get('CSV_FILENAME', 'user_behavior_events.csv')
 
 # CSV Headers - defines all the fields we're tracking
 CSV_HEADERS = [
@@ -548,7 +565,7 @@ def export_session(session_id):
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("Behavior Data Collection Server")
+    print(SERVICE_NAME)
     print("=" * 60)
     print(f"Data directory: {DATA_DIR}")
     print(f"CSV file: {CSV_FILENAME}")
@@ -558,7 +575,7 @@ if __name__ == '__main__':
     initialize_csv()
     
     print("\nServer starting...")
-    print("Access at: http://localhost:5001")
+    print(f"Access at: http://0.0.0.0:{PORT}")
     print("\nEndpoints:")
     print("  GET  /                    - Health check")
     print("  POST /save_events         - Save captured events")
@@ -570,6 +587,6 @@ if __name__ == '__main__':
     print("=" * 60)
     
     # Run server
-    # Use host='0.0.0.0' to allow access from other devices (like your Pi)
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    # Use host='0.0.0.0' to allow access from other devices (like your Pi or Render dynos)
+    app.run(debug=DEBUG_MODE, host='0.0.0.0', port=PORT)
 

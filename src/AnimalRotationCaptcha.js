@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import './AnimalRotationCaptcha.css';
 import useBehaviorTracking from './useBehaviorTracking';
 import { shouldCaptureBehavior } from './utils/behaviorMode';
+import { BEHAVIOR_API } from './config/apiConfig';
 
 const TOLERANCE = 15;
 const CAPTCHA_TYPE = 'rotation';
@@ -121,7 +122,7 @@ function AnimalRotationCaptcha({ onSuccess }) {
     const stats = getStats();
 
     if (shouldLogBehavior && events.length > 0) {
-      const serverUrl = 'http://localhost:5001/save_captcha_events';
+      const serverUrl = BEHAVIOR_API.saveCaptchaEvents;
       const result = await sendToServer(
         serverUrl,
         CAPTCHA_TYPE,

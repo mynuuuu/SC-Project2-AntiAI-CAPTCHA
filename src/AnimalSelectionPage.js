@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { animalImages } from './AnimalRotationPage';
 import useBehaviorTracking from './useBehaviorTracking';
 import { shouldCaptureBehavior } from './utils/behaviorMode';
+import { BEHAVIOR_API } from './config/apiConfig';
 import './App.css';
 
 const CAPTCHA_ID = 'captcha3';
@@ -147,7 +148,7 @@ function AnimalSelectionPage() {
             };
 
             try {
-                const serverUrl = 'http://localhost:5001/save_captcha_events';
+                const serverUrl = BEHAVIOR_API.saveCaptchaEvents;
                 const response = await fetch(serverUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

@@ -19,6 +19,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import TimeoutException
 from PIL import Image
 import io
 import time
@@ -142,6 +143,48 @@ class CVAttacker:
             logger.error(f"Failed to initialize WebDriver: {e}")
             logger.error("Tip: Run 'python check_browser_version.py' to check your setup")
             raise
+    
+    def complete_login_form_if_present(self, captcha_selector: str = ".custom-slider-captcha") -> bool:
+        """
+        Fill the login form (email/password) and click Verify CAPTCHA if the new UI is shown.
+        Returns True if the form was filled, False if the form was not present.
+        """
+        try:
+            email_input = WebDriverWait(self.driver, 4).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='Enter your name']"))
+            )
+        except TimeoutException:
+            # Login form not on this page
+            logger.info("Login form not detected on landing page - assuming we're already on CAPTCHA flow.")
+            return False
+        
+        try:
+            password_input = self.driver.find_element(By.CSS_SELECTOR, "input[placeholder='Enter your password']")
+            verify_button = self.driver.find_element(By.XPATH, "//button[contains(., 'Verify CAPTCHA')]")
+        except Exception as e:
+            logger.error(f"Found login form but could not locate all fields/buttons: {e}")
+            return False
+        
+        random_email = f"user_{uuid.uuid4().hex[:6]}@example.com"
+        random_password = uuid.uuid4().hex[:10]
+        
+        email_input.clear()
+        email_input.send_keys(random_email)
+        password_input.clear()
+        password_input.send_keys(random_password)
+        logger.info(f"Filled login form with random credentials ({random_email} / ****)")
+        
+        verify_button.click()
+        logger.info("Clicked 'Verify CAPTCHA' to start the CAPTCHA flow.")
+        
+        try:
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, captcha_selector))
+            )
+            logger.info("Slider CAPTCHA loaded after form submission.")
+        except TimeoutException:
+            logger.warning("Slider CAPTCHA did not appear after submitting the form - continuing anyway.")
+        return True
     
     def take_screenshot(self, element=None) -> np.ndarray:
         """
@@ -2557,6 +2600,8 @@ class CVAttacker:
             logger.info(f"Navigating to {attack_url}")
             self.driver.get(attack_url)
             time.sleep(self.wait_time)
+            # Fill login form (new UI requirement) if present
+            self.complete_login_form_if_present(captcha_selector)
             
             # ===== SOLVE SLIDER PUZZLE =====
             logger.info("\n" + "="*60)

@@ -17,6 +17,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 from typing import Dict, Optional
 import logging
 import sys
@@ -26,6 +27,7 @@ import json
 import base64
 from io import BytesIO
 from PIL import Image
+import uuid
 
 # Add common directory to path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -58,7 +60,7 @@ class LLMSycophancyAttacker:
     
     def __init__(self,
                  gemini_api_key: str,
-                 model_name: str = "gemini-2.0-flash-exp",
+                 model_name: str = "gemini-2.5-flash",
                  headless: bool = False,
                  save_behavior_data: bool = True):
         """
@@ -130,6 +132,47 @@ class LLMSycophancyAttacker:
         except Exception as e:
             logger.error(f"Failed to initialize browser: {e}")
             raise
+    
+    def _complete_login_form_if_present(self, captcha_selector: str = ".custom-slider-captcha") -> bool:
+        """
+        Fill the login form (email/password) and click Verify CAPTCHA if the entry UI is present.
+        Returns True if the form was completed, False otherwise.
+        """
+        try:
+            email_input = WebDriverWait(self.driver, 4).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder='Enter your name']"))
+            )
+        except TimeoutException:
+            logger.info("Login form not detected on landing page - proceeding directly to CAPTCHA flow.")
+            return False
+        
+        try:
+            password_input = self.driver.find_element(By.CSS_SELECTOR, "input[placeholder='Enter your password']")
+            verify_button = self.driver.find_element(By.XPATH, "//button[contains(., 'Verify CAPTCHA')]")
+        except Exception as e:
+            logger.error(f"Login form detected but controls missing: {e}")
+            return False
+        
+        random_email = f"user_{uuid.uuid4().hex[:6]}@example.com"
+        random_password = uuid.uuid4().hex[:10]
+        
+        email_input.clear()
+        email_input.send_keys(random_email)
+        password_input.clear()
+        password_input.send_keys(random_password)
+        logger.info(f"Filled login form with random credentials ({random_email} / ****)")
+        
+        verify_button.click()
+        logger.info("Clicked 'Verify CAPTCHA' to launch CAPTCHA flow.")
+        
+        try:
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, captcha_selector))
+            )
+            logger.info("Slider CAPTCHA detected after submitting login form.")
+        except TimeoutException:
+            logger.warning("Slider CAPTCHA did not appear after submitting login form (continuing).")
+        return True
     
     def capture_screenshot(self):
         """Capture screenshot for LLM"""
@@ -218,6 +261,7 @@ Respond in JSON format:
                 logger.info(f"  Confidence: {self.confidence:.2f}")
                 logger.info(f"  Reasoning: {reasoning}")
                 logger.info(f"  Target: {target_position}")
+                logger.info("🔍 BELIEF SOURCE: TRUE AI SYCOPHANCY (LLM formed this belief on its own)")
                 
                 self.thoughts.append({
                     'step': 'belief_formation',
@@ -239,6 +283,7 @@ Respond in JSON format:
                 # Fallback: extract belief from text
                 self.belief = "I believe I should slide to the right end"  # Default
                 self.confidence = 0.8
+                logger.info("🔁 BELIEF SOURCE: PURE SYCOPHANCY FALLBACK (LLM response unreadable, using default false belief)")
                 return {
                     'belief': self.belief,
                     'confidence': self.confidence,
@@ -253,6 +298,7 @@ Respond in JSON format:
             # Fallback
             self.belief = "I believe I should slide to the right end"
             self.confidence = 0.7
+            logger.info("🔁 BELIEF SOURCE: PURE SYCOPHANCY FALLBACK (LLM error, using default false belief)")
             return {
                 'belief': self.belief,
                 'confidence': self.confidence,
@@ -534,6 +580,9 @@ Respond in JSON format:
             logger.info("Navigating to page...")
             self.driver.get(url)
             time.sleep(3)
+            
+            # Fill login form with random data if the UI requires it
+            self._complete_login_form_if_present()
             
             # Wait for CAPTCHA
             logger.info("Waiting for CAPTCHA element...")
