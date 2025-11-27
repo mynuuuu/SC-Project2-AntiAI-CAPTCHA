@@ -188,6 +188,8 @@ function AnimalSelectionPage() {
             console.log('Layer 3: Behavior logging is disabled');
         }
 
+        if(isAnswered) return;
+
         // Normal captcha verification flow
         setIsSuccess(isCorrect);
         setIsAnswered(true);
