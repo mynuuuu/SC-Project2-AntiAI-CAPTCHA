@@ -165,8 +165,8 @@ function AnimalSelectionPage() {
                 const result = await response.json();
 
                 if (result.success) {
-                    console.log(`✓ Layer 3 data saved to ${CAPTCHA_ID}.csv`);
-                    
+                    console.log(`  Layer 3 data saved to ${CAPTCHA_ID}.csv`);
+
                     // Store classification result for final gate (Morse captcha)
                     // This is the final classification before Morse - use this to decide access
                     if (result.classification) {
@@ -177,7 +177,7 @@ function AnimalSelectionPage() {
                             decision: classification.decision,
                             captcha_id: CAPTCHA_ID
                         }));
-                        console.log(`📝 Stored final classification: ${classification.decision} (prob: ${classification.prob_human.toFixed(3)})`);
+                        console.log(`  Stored final classification: ${classification.decision} (prob: ${classification.prob_human.toFixed(3)})`);
                     }
                 } else {
                     console.error('Failed to save data:', result.error);
@@ -189,7 +189,7 @@ function AnimalSelectionPage() {
             console.log('Layer 3: Behavior logging is disabled');
         }
 
-        if(isAnswered) return;
+        if (isAnswered) return;
 
         // Normal captcha verification flow
         setIsSuccess(isCorrect);

@@ -89,7 +89,7 @@ function SliderCaptchaPage() {
             {captchaStatus[captcha.id] && (
               <div className="captcha-status">
                 <div className="status-verified">
-                  <span>✓ Verified Successfully!</span>
+                  <span>  Verified Successfully!</span>
                 </div>
               </div>
             )}

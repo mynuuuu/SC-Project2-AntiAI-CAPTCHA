@@ -113,7 +113,7 @@ function AnimalRotationCaptcha({ onSuccess }) {
 
     const diff = Math.abs(animalRotation - targetRotation);
     const isSuccess = diff <= TOLERANCE || diff >= 360 - TOLERANCE;
-    setMessage(isSuccess ? '✅ Captcha Passed!' : '❌ Try Again!');
+    setMessage(isSuccess ? '  Captcha Passed!' : '  Try Again!');
 
     let events = [];
     if (isRecording) {
@@ -131,7 +131,7 @@ function AnimalRotationCaptcha({ onSuccess }) {
         isSuccess
       );
       if (result.success) {
-        console.log('✓ Data saved to captcha2.csv');
+        console.log('  Data saved to captcha2.csv');
       } else {
         console.error('Failed to save rotation captcha data:', result.error);
       }
@@ -208,7 +208,7 @@ function AnimalRotationCaptcha({ onSuccess }) {
         <p
           className={
             'rotation-captcha-message ' +
-            (message.includes('✅')
+            (message.includes(' ')
               ? 'rotation-captcha-message-success'
               : 'rotation-captcha-message-error')
           }

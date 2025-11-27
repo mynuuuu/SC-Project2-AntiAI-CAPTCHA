@@ -436,11 +436,11 @@ def save_captcha_events():
                     writer.writerow(row)
                     events_saved += 1
             
-            print(f"✓ Appended {events_saved} events to {csv_filename} (session: {session_id}, success: {success})")
+            print(f"  Appended {events_saved} events to {csv_filename} (session: {session_id}, success: {success})")
         else:
             # Skip saving if classified as bot for captcha1/2/3
             if captcha_id in ['captcha1', 'captcha2', 'captcha3'] and classification_result is not None:
-                print(f"⏭️  Skipping save for {captcha_id}: classified as BOT (session: {session_id})")
+                print(f"    Skipping save for {captcha_id}: classified as BOT (session: {session_id})")
         
         response = {
             'success': True,

@@ -41,28 +41,28 @@ try:
                     captcha_id = f.replace('.csv', '')
                     df['captcha_id'] = captcha_id
                 human_dfs.append(df)
-                print(f"  ✓ {f}: {len(df)} events, {df['session_id'].nunique()} sessions")
+                print(f"    {f}: {len(df)} events, {df['session_id'].nunique()} sessions")
             except Exception as e:
-                print(f"  ⚠️  Error reading {f}: {e}")
+                print(f"     Error reading {f}: {e}")
                 try:
                     df = pd.read_csv(path, error_bad_lines=False, warn_bad_lines=False, engine='python')
                     if 'captcha_id' not in df.columns:
                         captcha_id = f.replace('.csv', '')
                         df['captcha_id'] = captcha_id
                     human_dfs.append(df)
-                    print(f"  ✓ {f}: {len(df)} events (recovered)")
+                    print(f"    {f}: {len(df)} events (recovered)")
                 except:
-                    print(f"  ✗ Failed to read {f}")
+                    print(f"    Failed to read {f}")
     
     if not human_dfs:
-        print("  ✗ No human data loaded!")
+        print("    No human data loaded!")
         exit(1)
     
     df_human = pd.concat(human_dfs, ignore_index=True)
     print(f"\n  Combined human: {len(df_human)} events, {df_human['session_id'].nunique()} sessions")
     
 except Exception as e:
-    print(f"  ✗ Error loading human data: {e}")
+    print(f"    Error loading human data: {e}")
     import traceback
     traceback.print_exc()
     exit(1)
@@ -81,27 +81,27 @@ try:
                     captcha_id = f.replace('bot_', '').replace('.csv', '')
                     df['captcha_id'] = captcha_id
                 bot_dfs.append(df)
-                print(f"  ✓ {f}: {len(df)} events, {df['session_id'].nunique()} sessions")
+                print(f"    {f}: {len(df)} events, {df['session_id'].nunique()} sessions")
             except Exception as e:
-                print(f"  ⚠️  Error reading {f}: {e}")
+                print(f"     Error reading {f}: {e}")
                 try:
                     df = pd.read_csv(path, error_bad_lines=False, warn_bad_lines=False, engine='python')
                     if 'captcha_id' not in df.columns:
                         captcha_id = f.replace('bot_', '').replace('.csv', '')
                         df['captcha_id'] = captcha_id
                     bot_dfs.append(df)
-                    print(f"  ✓ {f}: {len(df)} events (recovered)")
+                    print(f"    {f}: {len(df)} events (recovered)")
                 except:
-                    print(f"  ✗ Failed to read {f}")
+                    print(f"    Failed to read {f}")
     
     if not bot_dfs:
-        print("  ⚠️  No bot data loaded!")
+        print("     No bot data loaded!")
         df_bot = pd.DataFrame()
     else:
         df_bot = pd.concat(bot_dfs, ignore_index=True)
-        print(f"  ✓ Bot data: {len(df_bot)} events, {df_bot['session_id'].nunique()} sessions")
+        print(f"    Bot data: {len(df_bot)} events, {df_bot['session_id'].nunique()} sessions")
 except Exception as e:
-    print(f"  ⚠️  Error loading bot data: {e}")
+    print(f"     Error loading bot data: {e}")
     df_bot = pd.DataFrame()
 
 # Check for data issues
@@ -195,19 +195,19 @@ def extract_features_from_sessions(df: pd.DataFrame, label: int) -> tuple:
                 labels_list.append(label)
                 session_ids.append(session_id)
         except Exception as e:
-            print(f"  ⚠️  Error extracting features for session {session_id}: {e}")
+            print(f"     Error extracting features for session {session_id}: {e}")
             continue
     
     return np.array(features_list), np.array(labels_list), session_ids
 
 print("\n[*] Extracting features from human sessions...")
 X_human, y_human, human_sessions = extract_features_from_sessions(df_human, label=1)
-print(f"  ✓ Extracted {len(X_human)} human feature vectors")
+print(f"    Extracted {len(X_human)} human feature vectors")
 
 if len(df_bot) > 0:
     print("\n[*] Extracting features from bot sessions...")
     X_bot, y_bot, bot_sessions = extract_features_from_sessions(df_bot, label=0)
-    print(f"  ✓ Extracted {len(X_bot)} bot feature vectors")
+    print(f"    Extracted {len(X_bot)} bot feature vectors")
     
     # Combine
     X = np.vstack([X_human, X_bot])
@@ -259,9 +259,9 @@ if len(bot_feat) > 0:
         if feat_name in human_feat.columns and feat_name in bot_feat.columns:
             diff = abs(human_feat[feat_name].mean() - bot_feat[feat_name].mean())
             if diff > 10:  # Significant difference
-                print(f"    ⚠️  {feat_name}: Large difference ({diff:.2f})")
+                print(f"       {feat_name}: Large difference ({diff:.2f})")
 else:
-    print("  ⚠️  No bot data to compare")
+    print("     No bot data to compare")
 
 # Check if differences are too large
 print("\n4. PROBLEM DIAGNOSIS...")
@@ -278,27 +278,27 @@ if len(bot_feat) > 0:
                 large_diffs += 1
     
     if large_diffs > 5:
-        problems.append(f"  ⚠️  Too many features with large differences: {large_diffs} features differ by >50")
+        problems.append(f"     Too many features with large differences: {large_diffs} features differ by >50")
     
     # Check for session imbalance
     if abs(len(human_feat) - len(bot_feat)) > max(len(human_feat), len(bot_feat)) * 0.3:
-        problems.append(f"  ⚠️  Severe class imbalance: {len(human_feat)} human vs {len(bot_feat)} bot sessions")
+        problems.append(f"     Severe class imbalance: {len(human_feat)} human vs {len(bot_feat)} bot sessions")
     
     # Check feature variance
     human_var = human_feat.drop(columns=['session_id', 'label']).var().mean()
     bot_var = bot_feat.drop(columns=['session_id', 'label']).var().mean()
     if abs(human_var - bot_var) > 100:
-        problems.append(f"  ⚠️  Variance difference too large: {abs(human_var - bot_var):.1f}")
+        problems.append(f"     Variance difference too large: {abs(human_var - bot_var):.1f}")
 else:
-    problems.append("  ⚠️  No bot data available for comparison")
+    problems.append("     No bot data available for comparison")
 
 if problems:
-    print("\n❌ PROBLEMS FOUND:")
+    print("\n  PROBLEMS FOUND:")
     for p in problems:
         print(p)
     print("\n  These differences make it EASY for the model to distinguish bots.")
 else:
-    print("\n✓ Statistics look similar - model should struggle more!")
+    print("\n  Statistics look similar - model should struggle more!")
 
 # Test with simple model
 print("\n5. TESTING WITH SIMPLE MODEL...")
@@ -306,7 +306,7 @@ X_model = feat_df.drop(columns=['session_id', 'label']).values
 y_model = feat_df['label'].values
 
 if len(np.unique(y_model)) < 2:
-    print("  ✗ Only one class in dataset! Cannot train.")
+    print("    Only one class in dataset! Cannot train.")
     print(f"    Classes: {np.unique(y_model)}")
 else:
     # Scale features
@@ -327,7 +327,7 @@ else:
     print(f"  Test accuracy:  {test_acc*100:.1f}%")
     
     if test_acc == 1.0:
-        print("\n  ❌ STILL 100% ACCURATE!")
+        print("\n    STILL 100% ACCURATE!")
         print("  This means bots are VERY different from humans.")
         
         # Show feature importance
@@ -344,9 +344,9 @@ else:
                 print(f"      Bot:   {bot_feat[feat].mean():.2f} ± {bot_feat[feat].std():.2f}")
                 print(f"      Diff:  {abs(human_feat[feat].mean() - bot_feat[feat].mean()):.2f}")
     elif test_acc > 0.95:
-        print(f"\n  ⚠️  Very high accuracy ({test_acc*100:.1f}%) - bots are easy to detect")
+        print(f"\n     Very high accuracy ({test_acc*100:.1f}%) - bots are easy to detect")
     else:
-        print(f"\n  ✓ Model accuracy is reasonable ({test_acc*100:.1f}%)")
+        print(f"\n    Model accuracy is reasonable ({test_acc*100:.1f}%)")
 
 print("\n" + "=" * 70)
 print("RECOMMENDATIONS:")

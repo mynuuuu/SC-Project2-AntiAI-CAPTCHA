@@ -69,7 +69,7 @@ class BehaviorTracker:
         self.current_captcha_id = captcha_id
         self.behavior_events = []
         self.captcha_metadata = {}
-        logger.info(f"📝 Started new session: {self.session_id} for {captcha_id}")
+        logger.info(f"  Started new session: {self.session_id} for {captcha_id}")
     
     def record_event(self, event_type: str, x: float, y: float, 
                      time_since_start: float, time_since_last: float, 
@@ -250,7 +250,7 @@ class BehaviorTracker:
             # Append to CSV or create new file
             df.to_csv(output_file, mode='a', header=not file_exists, index=False)
             
-            logger.info(f"✓ Saved {len(df)} bot behavior events to {output_file}")
+            logger.info(f"  Saved {len(df)} bot behavior events to {output_file}")
             logger.info(f"  Session ID: {self.session_id}")
             logger.info(f"  Captcha: {captcha_id}, Success: {success}")
 
@@ -269,11 +269,11 @@ class BehaviorTracker:
                 }
                 resp = requests.post(server_url, json=payload, timeout=5)
                 if resp.ok:
-                    logger.info("✓ Sent behavior events to behavior_server for logging/classification")
+                    logger.info("  Sent behavior events to behavior_server for logging/classification")
                 else:
-                    logger.warning(f"⚠️  Failed to send behavior to behavior_server: {resp.status_code} {resp.text[:200]}")
+                    logger.warning(f"   Failed to send behavior to behavior_server: {resp.status_code} {resp.text[:200]}")
             except Exception as send_err:
-                logger.warning(f"⚠️  Error sending behavior to behavior_server: {send_err}")
+                logger.warning(f"   Error sending behavior to behavior_server: {send_err}")
             
         except Exception as e:
             logger.error(f"Error saving behavior data to CSV: {e}")

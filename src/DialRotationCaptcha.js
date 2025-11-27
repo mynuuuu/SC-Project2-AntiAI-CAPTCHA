@@ -316,9 +316,9 @@ function DialRotationCaptcha({ onSuccess }) {
         });
 
         const result = await response.json();
-        
+
         if (result.success) {
-          console.log(`✓ Rotation data saved to ${CAPTCHA_ID}.csv`);
+          console.log(`  Rotation data saved to ${CAPTCHA_ID}.csv`);
         } else {
           console.error('Failed to save data:', result.error);
         }
@@ -333,17 +333,17 @@ function DialRotationCaptcha({ onSuccess }) {
 
     // Normal captcha verification flow
     if (isSuccess) {
-      setMessage('✅ Captcha Solved');
+      setMessage('  Captcha Solved');
       if (onSuccess) {
         setTimeout(onSuccess, 1000);
       }
     } else {
-      setMessage('❌ Try Again!');
+      setMessage('  Try Again!');
     }
   };
 
   const handleSkip = () => {
-    setMessage('⏭️ Skipped');
+    setMessage('   Skipped');
     if (onSuccess) {
       setTimeout(onSuccess, 500); // Navigate to next captcha
     }
@@ -451,7 +451,7 @@ function DialRotationCaptcha({ onSuccess }) {
       </div>
 
       {message && (
-        <p className={`dial-captcha-message ${message.includes('✅')
+        <p className={`dial-captcha-message ${message.includes(' ')
           ? 'dial-captcha-message-success'
           : 'dial-captcha-message-error'
           }`}>

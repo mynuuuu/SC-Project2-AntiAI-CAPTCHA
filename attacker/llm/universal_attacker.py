@@ -100,7 +100,7 @@ class LLMCaptchaAttacker:
         """
         prompt = """You are an expert CAPTCHA solver with vision capabilities. Analyze this CAPTCHA and SOLVE IT.
 
-🎯 CAPTCHA TYPES & HOW TO SOLVE:
+  CAPTCHA TYPES & HOW TO SOLVE:
 
 **1. TEXT/NUMBER CAPTCHA:**
 - Read the distorted/styled text exactly as shown
@@ -135,7 +135,7 @@ class LLMCaptchaAttacker:
 - "Select images in order" or "Click the images that match"
 - Solution format: Ordered list of selections
 
-📋 YOUR ANALYSIS MUST INCLUDE:
+  YOUR ANALYSIS MUST INCLUDE:
 
 1. **CAPTCHA TYPE:** Identify exactly what type this is
 2. **INSTRUCTIONS VISIBLE:** Quote any text instructions you see
@@ -147,13 +147,13 @@ class LLMCaptchaAttacker:
 4. **INTERACTIVE ELEMENTS:** What can be clicked/typed into
 5. **EXPECTED RESULT:** What should happen after solving
 
-🔍 CRITICAL: Look at the actual content in the image:
+  CRITICAL: Look at the actual content in the image:
 - Read any distorted text carefully
 - Solve any math problems completely
 - Identify objects in images precisely
 - Note grid positions accurately
 
-📐 FOR IMAGE GRIDS:
+  FOR IMAGE GRIDS:
 ```
 Position numbering (3x3 grid):
 (1,1) (1,2) (1,3)
@@ -161,7 +161,7 @@ Position numbering (3x3 grid):
 (3,1) (3,2) (3,3)
 ```
 
-💡 EXAMPLES OF GOOD RESPONSES:
+  EXAMPLES OF GOOD RESPONSES:
 
 **Example 1 - Text CAPTCHA:**
 ```
@@ -200,17 +200,17 @@ SOLUTION: Click the checkbox
 ACTION: Click the checkbox element (usually triggers validation or additional challenge)
 ```
 
-⚠️ IMPORTANT:
+  IMPORTANT:
 - BE SPECIFIC with your solution - don't say "solve the math" - give the actual answer!
 - For text, spell it out character by character if unclear
 - For images, describe what you see in each position you're selecting
 - Always provide the exact action sequence needed"""
 
         if previous_attempt_failed:
-            prompt += "\n\n🔴 PREVIOUS ATTEMPT FAILED - Look more carefully and try a different approach!"
+            prompt += "\n\n  PREVIOUS ATTEMPT FAILED - Look more carefully and try a different approach!"
 
         if page_html:
-            prompt += f"\n\n📄 HTML CONTEXT (first 5000 chars):\n{page_html[:5000]}"
+            prompt += f"\n\n  HTML CONTEXT (first 5000 chars):\n{page_html[:5000]}"
 
         # Convert base64 to PIL Image for Gemini
         image_data = base64.b64decode(screenshot_base64)
@@ -233,7 +233,7 @@ ACTION: Click the checkbox element (usually triggers validation or additional ch
             return response_text
             
         except Exception as e:
-            print(f"❌ Error calling Gemini: {e}")
+            print(f"  Error calling Gemini: {e}")
             return f"Error: {e}"
     
     def get_action_plan_from_gemini(self, analysis, screenshot_base64):
@@ -246,7 +246,7 @@ ACTION: Click the checkbox element (usually triggers validation or additional ch
 
 Now provide SPECIFIC, EXECUTABLE actions as a JSON array. Be very precise with selectors and values.
 
-🎯 SELECTOR STRATEGIES (try in order):
+  SELECTOR STRATEGIES (try in order):
 1. ID: #captcha-input, #recaptcha-anchor, #submit-button
 2. Name: input[name="captcha"], input[name="answer"]
 3. Class: .captcha-field, .g-recaptcha, .h-captcha, .submit-btn
@@ -256,7 +256,7 @@ Now provide SPECIFIC, EXECUTABLE actions as a JSON array. Be very precise with s
 7. XPath: //input[@placeholder="Enter code"], //iframe[contains(@src,'recaptcha')]
 8. Data attributes: [data-testid="captcha-input"]
 
-📋 ACTION TYPES:
+  ACTION TYPES:
 
 **1. CLICK action:**
 ```json
@@ -324,7 +324,7 @@ Now provide SPECIFIC, EXECUTABLE actions as a JSON array. Be very precise with s
 }}
 ```
 
-🔍 FOR THIS CAPTCHA, provide the complete action sequence as JSON:
+  FOR THIS CAPTCHA, provide the complete action sequence as JSON:
 
 ```json
 {{
@@ -341,7 +341,7 @@ Now provide SPECIFIC, EXECUTABLE actions as a JSON array. Be very precise with s
 }}
 ```
 
-⚠️ CRITICAL RULES:
+  CRITICAL RULES:
 1. Always provide ACTUAL selectors you can see or infer from the HTML/image
 2. For text/math CAPTCHAs: Include the actual solution in "value" field
 3. For image selection: Specify exact grid positions
@@ -359,7 +359,7 @@ NOW CREATE THE ACTION PLAN:"""
             response = self.model.generate_content([prompt, image])
             return response.text
         except Exception as e:
-            print(f"❌ Error calling Gemini: {e}")
+            print(f"  Error calling Gemini: {e}")
             return f'{{"error": "{e}"}}'
     
     def human_like_mouse_movement(self, start_x, start_y, end_x, end_y):
@@ -680,10 +680,10 @@ NOW CREATE THE ACTION PLAN:"""
             
             plan = json.loads(action_text)
             
-            print(f"   📋 Captcha Type: {plan.get('captcha_type', 'unknown')}")
-            print(f"   🎯 Solution: {plan.get('solution_value', 'N/A')}")
+            print(f"     Captcha Type: {plan.get('captcha_type', 'unknown')}")
+            print(f"     Solution: {plan.get('solution_value', 'N/A')}")
             print(f"   💯 Confidence: {plan.get('confidence', 0)}")
-            print(f"   📝 Expected: {plan.get('expected_outcome', 'N/A')}\n")
+            print(f"     Expected: {plan.get('expected_outcome', 'N/A')}\n")
             
             actions = plan.get('actions', [])
             print(f"   🔧 Executing {len(actions)} action(s)...\n")
@@ -702,9 +702,9 @@ NOW CREATE THE ACTION PLAN:"""
                         
                         if element:
                             self.human_like_click(element)
-                            print(f"        ✅ Clicked successfully")
+                            print(f"          Clicked successfully")
                         else:
-                            print(f"        ⚠️  Element not found: {selector}")
+                            print(f"           Element not found: {selector}")
                     
                     elif action_type == 'input':
                         selector = action.get('selector')
@@ -718,9 +718,9 @@ NOW CREATE THE ACTION PLAN:"""
                             if clear_first:
                                 element.clear()
                             self.human_like_typing(element, str(value))
-                            print(f"        ✅ Typed: {value}")
+                            print(f"          Typed: {value}")
                         else:
-                            print(f"        ⚠️  Input field not found: {selector}")
+                            print(f"           Input field not found: {selector}")
                     
                     elif action_type == 'click_grid':
                         positions = action.get('positions', [])
@@ -740,10 +740,10 @@ NOW CREATE THE ACTION PLAN:"""
                                 
                                 if index < len(images):
                                     self.human_like_click(images[index])
-                                    print(f"        ✅ Clicked grid position ({row},{col})")
+                                    print(f"          Clicked grid position ({row},{col})")
                                     time.sleep(wait_between)
                         else:
-                            print(f"        ⚠️  Grid not found: {grid_selector}")
+                            print(f"           Grid not found: {grid_selector}")
                     
                     elif action_type == 'switch_iframe':
                         selector = action.get('selector')
@@ -751,13 +751,13 @@ NOW CREATE THE ACTION PLAN:"""
                         
                         if iframe:
                             self.driver.switch_to.frame(iframe)
-                            print(f"        ✅ Switched to iframe")
+                            print(f"          Switched to iframe")
                         else:
-                            print(f"        ⚠️  Iframe not found: {selector}")
+                            print(f"           Iframe not found: {selector}")
                     
                     elif action_type == 'switch_back':
                         self.driver.switch_to.default_content()
-                        print(f"        ✅ Switched back to main content")
+                        print(f"          Switched back to main content")
                     
                     elif action_type == 'wait':
                         seconds = action.get('seconds', 1)
@@ -778,9 +778,9 @@ NOW CREATE THE ACTION PLAN:"""
                             drag_actions.move_by_offset(offset_x, offset_y)
                             drag_actions.release()
                             drag_actions.perform()
-                            print(f"        ✅ Dragged element")
+                            print(f"          Dragged element")
                         else:
-                            print(f"        ⚠️  Drag element not found: {selector}")
+                            print(f"           Drag element not found: {selector}")
                     
                     # Wait after action if specified
                     wait_after = action.get('wait_after', 0)
@@ -788,17 +788,17 @@ NOW CREATE THE ACTION PLAN:"""
                         time.sleep(wait_after)
                 
                 except Exception as e:
-                    print(f"        ❌ Error: {e}")
+                    print(f"          Error: {e}")
                     continue
             
             return True
             
         except json.JSONDecodeError as e:
-            print(f"   ❌ Could not parse action plan as JSON: {e}")
+            print(f"     Could not parse action plan as JSON: {e}")
             print(f"   Raw response:\n{action_plan[:500]}")
             return False
         except Exception as e:
-            print(f"   ❌ Error executing actions: {e}")
+            print(f"     Error executing actions: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -807,12 +807,12 @@ NOW CREATE THE ACTION PLAN:"""
         """
         Iteratively solve CAPTCHA layers using Claude's vision with actual solutions
         """
-        print(f"🎯 Starting CAPTCHA attack on: {self.target_url}")
-        print(f"📊 Session ID: {self.session_id}\n")
+        print(f"  Starting CAPTCHA attack on: {self.target_url}")
+        print(f"  Session ID: {self.session_id}\n")
         
         for layer in range(1, max_layers + 1):
             print(f"{'='*60}")
-            print(f"🔍 LAYER {layer} - Analyzing CAPTCHA...")
+            print(f"  LAYER {layer} - Analyzing CAPTCHA...")
             print(f"{'='*60}\n")
             
             # Wait for page to load
@@ -874,7 +874,7 @@ Respond with JSON:
                     try:
                         verification = self.model.generate_content([verification_prompt, verify_image])
                         verify_text = verification.text
-                        print(f"\n🔍 Verification:\n{verify_text}\n")
+                        print(f"\n  Verification:\n{verify_text}\n")
                         
                         # Try to parse verification
                         if "```json" in verify_text:
@@ -882,20 +882,20 @@ Respond with JSON:
                         verify_data = json.loads(verify_text)
                         
                         if verify_data.get('solved') or verify_data.get('progressed'):
-                            print("✅ Progress detected! Moving to next layer...\n")
+                            print("  Progress detected! Moving to next layer...\n")
                             layer_solved = True
                             break
                     except Exception as e:
-                        print(f"⚠️  Verification error: {e}")
+                        print(f"   Verification error: {e}")
                 
                 retry_count += 1
                 
                 if not layer_solved and retry_count < max_retries:
-                    print("⚠️  Attempt failed, trying again...\n")
+                    print("   Attempt failed, trying again...\n")
                     time.sleep(1)
             
             if not layer_solved:
-                print(f"❌ Could not solve layer {layer} after {max_retries} attempts\n")
+                print(f"  Could not solve layer {layer} after {max_retries} attempts\n")
                 break
         
         print(f"{'='*60}")
@@ -912,10 +912,10 @@ Respond with JSON:
         df = pd.DataFrame(self.session_data)
         
         if len(df) == 0:
-            print("⚠️  No session data collected!")
+            print("   No session data collected!")
             return None
         
-        print(f"\n📊 Session Statistics:")
+        print(f"\n  Session Statistics:")
         print(f"   Total events: {len(df)}")
         print(f"   Event types: {df['event_type'].value_counts().to_dict()}")
         print(f"   Duration: {df['time_since_start'].max():.2f}s")
@@ -927,7 +927,7 @@ Respond with JSON:
         try:
             from ml_core import predict_slider, predict_human_prob
             
-            print(f"\n🌐 Calling ml_core.predict_slider()...")
+            print(f"\n  Calling ml_core.predict_slider()...")
             
             # Prepare metadata (optional)
             metadata = {
@@ -956,7 +956,7 @@ Respond with JSON:
                 'metadata': metadata
             }
             
-            print(f"\n🎯 ML Classification Results:")
+            print(f"\n  ML Classification Results:")
             print(f"{'='*60}")
             print(f"   Classification: {prediction['classification']}")
             print(f"   Is Bot: {prediction['is_bot']}")
@@ -966,11 +966,11 @@ Respond with JSON:
             return prediction
                 
         except ImportError as e:
-            print(f"❌ Error importing ml_core: {e}")
+            print(f"  Error importing ml_core: {e}")
             print(f"   Make sure ml_core.py is in the same directory or in PYTHONPATH")
             return None
         except Exception as e:
-            print(f"❌ Error calling predict_slider: {e}")
+            print(f"  Error calling predict_slider: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -981,13 +981,13 @@ Respond with JSON:
         so it shares the same format as existing bot training data.
         """
         if not self.session_data:
-            print("⚠️  No session data to append to bot CSV")
+            print("   No session data to append to bot CSV")
             return
         
         try:
             df = pd.DataFrame(self.session_data)
             if len(df) == 0:
-                print("⚠️  Empty DataFrame, skipping bot CSV append")
+                print("   Empty DataFrame, skipping bot CSV append")
                 return
             
             # Ensure start_time is set (if events were recorded, it should be)
@@ -1030,7 +1030,7 @@ Respond with JSON:
             df.to_csv(output_file, mode='a', header=not file_exists, index=False)
             print(f"💾 Appended {len(df)} events to {output_file}")
         except Exception as e:
-            print(f"❌ Error appending session to bot CSV: {e}")
+            print(f"  Error appending session to bot CSV: {e}")
             import traceback
             traceback.print_exc()
     
@@ -1043,7 +1043,7 @@ Respond with JSON:
             self.setup_driver()
             
             # Navigate to target
-            print(f"🌐 Navigating to {self.target_url}...")
+            print(f"  Navigating to {self.target_url}...")
             self.driver.get(self.target_url)
             
             # Initial human-like behavior
@@ -1067,14 +1067,14 @@ Respond with JSON:
             return prediction
             
         except Exception as e:
-            print(f"❌ Attack failed: {e}")
+            print(f"  Attack failed: {e}")
             import traceback
             traceback.print_exc()
             return None
             
         finally:
             if self.driver:
-                print("\n🛑 Closing browser in 5 seconds...")
+                print("\n  Closing browser in 5 seconds...")
                 time.sleep(5)
                 self.driver.quit()
 
@@ -1106,8 +1106,8 @@ if __name__ == "__main__":
     print("🎬 ATTACK COMPLETE")
     print("="*60)
     if result:
-        print("✅ Classification Result:")
+        print("  Classification Result:")
         print(json.dumps(result, indent=2))
     else:
-        print("❌ No classification result available")
+        print("  No classification result available")
     print("="*60)

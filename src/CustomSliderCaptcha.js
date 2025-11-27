@@ -269,10 +269,10 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
         });
 
         const result = await response.json();
-        
+
         if (result.success) {
-          console.log(`✓ Data saved and classified`);
-          
+          console.log(`  Data saved and classified`);
+
           // Display ML classification results
           if (result.classification) {
             const classification = result.classification;
@@ -282,9 +282,9 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
             console.log(`Decision: ${classification.decision.toUpperCase()}`);
             console.log(`Probability (Human): ${classification.prob_human.toFixed(3)}`);
             console.log(`Total Events: ${classification.num_events}`);
-            console.log(`Is Human: ${classification.is_human ? '✓ YES' : '✗ NO'}`);
+            console.log(`Is Human: ${classification.is_human ? '  YES' : '  NO'}`);
             console.log(`${'='.repeat(60)}\n`);
-            
+
             // Store classification result for final gate (Morse captcha)
             // This will be used to decide if user can proceed after Morse
             if (resolvedCaptchaId === 'captcha1') {
@@ -296,11 +296,11 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
                 captcha_id: resolvedCaptchaId
               }));
             }
-            
+
             // You can use classification.is_human to make decisions
             // For example, reject if classified as bot even if CAPTCHA was solved correctly
             if (!classification.is_human && classification.prob_human < 0.5) {
-              console.warn('⚠️  WARNING: Behavior classified as BOT-like!');
+              console.warn('   WARNING: Behavior classified as BOT-like!');
               // You could add logic here to reject the solution even if position is correct
             }
           }
@@ -320,7 +320,7 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
     if (isCorrect) {
       setIsVerified(true);
       setIsFailed(false);
-      setMessage('✅ Captcha Solved');
+      setMessage('  Captcha Solved');
 
       onVerify({
         success: true,
@@ -331,7 +331,7 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
       });
     } else {
       setIsFailed(true);
-      setMessage('❌ Try Again');
+      setMessage('  Try Again');
 
       onVerify({
         success: false,
@@ -443,7 +443,7 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
           onMouseDown={handleMouseDown}
           onTouchStart={handleTouchStart}
         >
-          {isVerified ? '✓' : isFailed ? '✗' : '→'}
+          {isVerified ? ' ' : isFailed ? ' ' : '→'}
         </div>
         <div className="slider-text">
           {isVerified ? '' : isFailed ? 'Try again...' : 'Slide to verify'}

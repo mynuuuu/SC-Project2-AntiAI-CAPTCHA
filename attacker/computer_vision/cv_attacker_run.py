@@ -31,7 +31,7 @@ def attack_single_captcha(url: str, headless: bool = False):
         print("\n" + "="*60)
         print("ATTACK RESULTS")
         print("="*60)
-        print(f"Overall Success: {'✓ YES' if result['success'] else '✗ NO'}")
+        print(f"Overall Success: {'  YES' if result['success'] else '  NO'}")
         print(f"Puzzle Type: {result['puzzle_type']}")
         print(f"Attempts: {result['attempts']}")
         print(f"Time Elapsed: {elapsed_time:.2f} seconds")
@@ -48,7 +48,7 @@ def attack_single_captcha(url: str, headless: bool = False):
             print(f"  Decision: {overall_class['decision'].upper()}")
             print(f"  Probability (Human): {overall_class['prob_human']:.3f}")
             print(f"  Number of Events: {overall_class['num_events']}")
-            print(f"  Is Human: {'✓ YES' if overall_class['is_human'] else '✗ NO'}")
+            print(f"  Is Human: {'  YES' if overall_class['is_human'] else '  NO'}")
         
         if result.get('error'):
             print(f"\nError: {result['error']}")
@@ -95,9 +95,9 @@ def attack_multiple_captchas(url: str, num_attempts: int = 5, headless: bool = F
             
             if result['success']:
                 successes += 1
-                print(f"✓ Success (Time: {elapsed_time:.2f}s)")
+                print(f"  Success (Time: {elapsed_time:.2f}s)")
             else:
-                print(f"✗ Failed (Time: {elapsed_time:.2f}s)")
+                print(f"  Failed (Time: {elapsed_time:.2f}s)")
                 if result['error']:
                     print(f"  Error: {result['error']}")
             
@@ -112,7 +112,7 @@ def attack_multiple_captchas(url: str, num_attempts: int = 5, headless: bool = F
                 time.sleep(2)
                 
         except Exception as e:
-            print(f"✗ Error: {e}")
+            print(f"  Error: {e}")
         finally:
             attacker.close()
     

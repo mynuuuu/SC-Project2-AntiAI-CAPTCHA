@@ -354,7 +354,7 @@ class CVAttacker:
                 match = re.search(r'left:\s*(\d+(?:\.\d+)?)px', cutout_style)
                 if match:
                     target_puzzle_position = float(match.group(1))
-                    logger.info(f"✓ Read puzzlePosition directly from DOM: {target_puzzle_position}px")
+                    logger.info(f"  Read puzzlePosition directly from DOM: {target_puzzle_position}px")
             except Exception as e:
                 logger.info(f"Could not read puzzlePosition from DOM: {e}, using CV detection")
 
@@ -459,7 +459,7 @@ class CVAttacker:
                             try:
                                 verified = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track.verified")
                                 if verified:
-                                    logger.info("✓ Slider puzzle solved after micro-adjustment!")
+                                    logger.info("  Slider puzzle solved after micro-adjustment!")
                                     return True
                             except:
                                 pass
@@ -473,7 +473,7 @@ class CVAttacker:
             try:
                 verified = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track.verified")
                 if verified:
-                    logger.info("✓ Slider puzzle solved successfully!")
+                    logger.info("  Slider puzzle solved successfully!")
                     return True
             except:
                 pass
@@ -524,7 +524,7 @@ class CVAttacker:
                             try:
                                 verified = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track.verified")
                                 if verified:
-                                    logger.info("✓ Slider puzzle solved via JavaScript positioning!")
+                                    logger.info("  Slider puzzle solved via JavaScript positioning!")
                                     return True
                             except:
                                 pass
@@ -562,7 +562,7 @@ class CVAttacker:
                             try:
                                 verified = captcha_element.find_element(By.CSS_SELECTOR, ".slider-track.verified")
                                 if verified:
-                                    logger.info(f"✓ Slider puzzle solved with adjustment {adjustment:+.1f}px!")
+                                    logger.info(f"  Slider puzzle solved with adjustment {adjustment:+.1f}px!")
                                     return True
                             except:
                                 pass
@@ -910,15 +910,15 @@ class CVAttacker:
             captcha_type: Type of captcha ('captcha1', 'captcha2', 'captcha3')
             success: Whether the captcha was solved successfully
         """
-        logger.info(f"🔍 Attempting to save behavior data for {captcha_type}")
+        logger.info(f"  Attempting to save behavior data for {captcha_type}")
         logger.info(f"   save_behavior_data={self.save_behavior_data}, num_events={len(self.behavior_events)}")
 
         if not self.save_behavior_data:
-            logger.warning(f"⚠️  Skipping save: save_behavior_data is False")
+            logger.warning(f"   Skipping save: save_behavior_data is False")
             return
 
         if not self.behavior_events:
-            logger.warning(f"⚠️  Skipping save for {captcha_type}: No behavior events tracked!")
+            logger.warning(f"   Skipping save for {captcha_type}: No behavior events tracked!")
             logger.warning(f"   use_model_classification={self.use_model_classification}")
             return
 
@@ -988,7 +988,7 @@ class CVAttacker:
 
             df.to_csv(output_file, mode='a', header=not file_exists, index=False)
 
-            logger.info(f"✓ Saved {len(df)} bot behavior events to {output_file}")
+            logger.info(f"  Saved {len(df)} bot behavior events to {output_file}")
             logger.info(f"  Session ID: {self.session_id}")
             logger.info(f"  Captcha: {captcha_type}, Success: {success}")
 
@@ -1007,11 +1007,11 @@ class CVAttacker:
                 }
                 resp = requests.post(server_url, json=payload, timeout=5)
                 if resp.ok:
-                    logger.info("✓ Sent behavior events to behavior_server for logging/classification")
+                    logger.info("  Sent behavior events to behavior_server for logging/classification")
                 else:
-                    logger.warning(f"⚠️  Failed to send behavior to behavior_server: {resp.status_code} {resp.text[:200]}")
+                    logger.warning(f"   Failed to send behavior to behavior_server: {resp.status_code} {resp.text[:200]}")
             except Exception as send_err:
-                logger.warning(f"⚠️  Error sending behavior to behavior_server: {send_err}")
+                logger.warning(f"   Error sending behavior to behavior_server: {send_err}")
 
         except Exception as e:
             logger.error(f"Error saving behavior data to CSV: {e}")
@@ -1030,7 +1030,7 @@ class CVAttacker:
 
         self.behavior_events = []
         self.captcha_metadata = {}
-        logger.info(f"📝 Started new session: {self.session_id} for {captcha_id}")
+        logger.info(f"  Started new session: {self.session_id} for {captcha_id}")
 
     def _detect_image_orientation(self, image: np.ndarray, is_pointing_object: bool = True) -> float:
         """
@@ -1521,16 +1521,16 @@ class CVAttacker:
 
             try:
                 dial_element = captcha_element.find_element(By.CSS_SELECTOR, ".dial")
-                logger.info("✓ Found dial element")
+                logger.info("  Found dial element")
             except Exception as e:
-                logger.error(f"✗ Could not find dial element: {e}")
+                logger.error(f"  Could not find dial element: {e}")
                 return False
 
             try:
                 animal_img = captcha_element.find_element(By.CSS_SELECTOR, ".target-animal")
-                logger.info("✓ Found animal image element")
+                logger.info("  Found animal image element")
             except Exception as e:
-                logger.error(f"✗ Could not find animal image: {e}")
+                logger.error(f"  Could not find animal image: {e}")
                 return False
 
 
@@ -1544,9 +1544,9 @@ class CVAttacker:
 
             try:
                 screenshot = self.take_screenshot(captcha_element)
-                logger.info(f"✓ Captured screenshot: {screenshot.shape}")
+                logger.info(f"  Captured screenshot: {screenshot.shape}")
             except Exception as e:
-                logger.error(f"✗ Failed to capture screenshot: {e}")
+                logger.error(f"  Failed to capture screenshot: {e}")
                 return False
 
             captcha_location = captcha_element.location
@@ -1557,12 +1557,12 @@ class CVAttacker:
             try:
                 target_dial_angle = self._detect_animal_direction(screenshot, animal_img, captcha_location)
                 if target_dial_angle is not None and target_dial_angle >= 0:
-                    logger.info(f"✓ Detected animal nose pointing direction: {target_dial_angle:.1f}°")
+                    logger.info(f"  Detected animal nose pointing direction: {target_dial_angle:.1f}°")
                 else:
-                    logger.error("✗ Detection returned invalid angle")
+                    logger.error("  Detection returned invalid angle")
                     return False
             except Exception as e:
-                logger.error(f"✗ Error during animal direction detection: {e}")
+                logger.error(f"  Error during animal direction detection: {e}")
                 import traceback
                 traceback.print_exc()
                 return False
@@ -1724,7 +1724,7 @@ class CVAttacker:
 
 
                     time.sleep((15 * 0.05) + 0.5)
-                    logger.info(f"✓ Completed drag simulation to {target_dial_angle}°")
+                    logger.info(f"  Completed drag simulation to {target_dial_angle}°")
                     drag_success = True
 
 
@@ -1738,7 +1738,7 @@ class CVAttacker:
                         last_event_time = current_time
 
                 except Exception as drag_e:
-                    logger.error(f"✗ JavaScript drag simulation failed: {drag_e}")
+                    logger.error(f"  JavaScript drag simulation failed: {drag_e}")
                     import traceback
                     traceback.print_exc()
 
@@ -1811,8 +1811,8 @@ class CVAttacker:
 
                 try:
                     success_msg = captcha_element.find_element(By.CSS_SELECTOR, ".dial-captcha-message-success")
-                    if success_msg and "✅" in success_msg.text:
-                        logger.info("✓ Dial rotation puzzle solved successfully!")
+                    if success_msg and " " in success_msg.text:
+                        logger.info("  Dial rotation puzzle solved successfully!")
                         return True
                 except:
                     pass
@@ -1990,7 +1990,7 @@ class CVAttacker:
                     rotation_after = get_current_rotation_dom()
                     if abs(rotation_after - rotation_before) >= 1:
                         rotation_changed = True
-                        logger.info(f"✓ Clicked {direction} button ({i+1}/{clicks_needed}) via JS - rotation: {rotation_before}° → {rotation_after}°")
+                        logger.info(f"  Clicked {direction} button ({i+1}/{clicks_needed}) via JS - rotation: {rotation_before}° → {rotation_after}°")
                 except Exception as js_e:
                     logger.debug(f"JavaScript click failed: {js_e}")
 
@@ -2006,7 +2006,7 @@ class CVAttacker:
                         rotation_after = get_current_rotation_dom()
                         if abs(rotation_after - rotation_before) >= 1:
                             rotation_changed = True
-                            logger.info(f"✓ Clicked {direction} button ({i+1}/{clicks_needed}) via ActionChains - rotation: {rotation_before}° → {rotation_after}°")
+                            logger.info(f"  Clicked {direction} button ({i+1}/{clicks_needed}) via ActionChains - rotation: {rotation_before}° → {rotation_after}°")
                     except Exception as ac_e:
                         logger.debug(f"ActionChains failed: {ac_e}")
 
@@ -2018,9 +2018,9 @@ class CVAttacker:
                         rotation_after = get_current_rotation_dom()
                         if abs(rotation_after - rotation_before) >= 1:
                             rotation_changed = True
-                            logger.info(f"✓ Clicked {direction} button ({i+1}/{clicks_needed}) via regular click - rotation: {rotation_before}° → {rotation_after}°")
+                            logger.info(f"  Clicked {direction} button ({i+1}/{clicks_needed}) via regular click - rotation: {rotation_before}° → {rotation_after}°")
                         else:
-                            logger.warning(f"✗ Click {i+1} didn't change rotation (still {rotation_after}°)")
+                            logger.warning(f"  Click {i+1} didn't change rotation (still {rotation_after}°)")
                     except Exception as click_e:
                         logger.error(f"Regular click failed: {click_e}")
 
@@ -2112,8 +2112,8 @@ class CVAttacker:
             time.sleep(2)
             try:
                 message_element = captcha_element.find_element(By.CSS_SELECTOR, ".rotation-captcha-message-success")
-                if message_element and ("✅" in message_element.text or "Passed" in message_element.text):
-                    logger.info("✓ Rotation puzzle solved successfully!")
+                if message_element and ("Passed" in message_element.text):
+                    logger.info("  Rotation puzzle solved successfully!")
                     return True
             except:
                 pass
@@ -2226,7 +2226,7 @@ class CVAttacker:
         Returns:
             Name of the detected animal/object, or None if not detected
         """
-        logger.info(f"🔍 Starting flying animal detection for {duration} seconds...")
+        logger.info(f"  Starting flying animal detection for {duration} seconds...")
         start_time = time.time()
         detected_animal = None
         check_count = 0
@@ -2248,7 +2248,7 @@ class CVAttacker:
                     flying_imgs = self.driver.find_elements(By.XPATH, "//img[@alt='Flying animal']")
 
                     if flying_imgs:
-                        logger.info(f"📍 Found {len(flying_imgs)} flying animal elements")
+                        logger.info(f"  Found {len(flying_imgs)} flying animal elements")
                         for img in flying_imgs:
                             try:
 
@@ -2279,7 +2279,7 @@ class CVAttacker:
 
                                         animal_name = filename.split()[0]
 
-                                    logger.info(f"✅ DETECTED AND SAVED flying animal: {animal_name}")
+                                    logger.info(f"  DETECTED AND SAVED flying animal: {animal_name}")
                                     detected_animal = animal_name
                                     self.detected_sliding_animal = animal_name
                                     return animal_name
@@ -2298,7 +2298,7 @@ class CVAttacker:
                             src = img.get_attribute('src')
 
                             if src and ('Flying Animals' in src or 'Flying%20Animals' in src):
-                                logger.info(f"📍 Found Flying Animals image via src scan: {src}")
+                                logger.info(f"  Found Flying Animals image via src scan: {src}")
 
 
                                 import urllib.parse
@@ -2318,7 +2318,7 @@ class CVAttacker:
                                 else:
                                     animal_name = filename.split()[0]
 
-                                logger.info(f"✅ DETECTED AND SAVED flying animal from src scan: {animal_name}")
+                                logger.info(f"  DETECTED AND SAVED flying animal from src scan: {animal_name}")
                                 detected_animal = animal_name
                                 self.detected_sliding_animal = animal_name
                                 return animal_name
@@ -2330,10 +2330,10 @@ class CVAttacker:
 
                 time.sleep(0.2)
 
-            logger.warning(f"❌ No flying animal detected after {check_count} checks over {duration} seconds")
+            logger.warning(f"  No flying animal detected after {check_count} checks over {duration} seconds")
 
         except Exception as e:
-            logger.error(f"❌ Error detecting flying animal: {e}")
+            logger.error(f"  Error detecting flying animal: {e}")
             import traceback
             traceback.print_exc()
 
@@ -2433,20 +2433,20 @@ class CVAttacker:
                         skip_button = self.driver.find_element(By.CSS_SELECTOR, selector)
 
                     if skip_button and skip_button.is_displayed() and skip_button.is_enabled():
-                        logger.info(f"✓ Found skip button with selector: {selector}")
+                        logger.info(f"  Found skip button with selector: {selector}")
                         skip_button.click()
                         time.sleep(1.5)
-                        logger.info("✓ Skip button clicked successfully")
+                        logger.info("  Skip button clicked successfully")
                         return True
                 except Exception as e:
                     logger.debug(f"Selector {selector} failed: {e}")
                     continue
 
-            logger.warning("✗ No skip button found")
+            logger.warning("  No skip button found")
             return False
 
         except Exception as e:
-            logger.error(f"✗ Error clicking skip button: {e}")
+            logger.error(f"  Error clicking skip button: {e}")
             return False
 
     def solve_third_captcha(self, captcha_element=None) -> bool:
@@ -2463,8 +2463,8 @@ class CVAttacker:
             logger.info("=== Solving Third Captcha (Animal Identification) ===")
 
             if not self.detected_sliding_animal:
-                logger.error("✗ No flying animal was detected during second captcha!")
-                logger.info("📋 Attempting to find available options anyway...")
+                logger.error("  No flying animal was detected during second captcha!")
+                logger.info("  Attempting to find available options anyway...")
 
 
                 start_time = time.time()
@@ -2479,7 +2479,7 @@ class CVAttacker:
                         logger.info(f"Found {len(animal_options)} animal options:")
                         for opt in animal_options:
                             logger.info(f"  - {opt.text}")
-                        logger.warning("❌ But we don't know which one is correct - detection failed")
+                        logger.warning("  But we don't know which one is correct - detection failed")
 
 
                         if animal_options and len(animal_options) > 0:
@@ -2516,7 +2516,7 @@ class CVAttacker:
 
                 return False
 
-            logger.info(f"🎯 Using detected animal: {self.detected_sliding_animal}")
+            logger.info(f"  Using detected animal: {self.detected_sliding_animal}")
 
 
             start_time = time.time()
@@ -2534,7 +2534,7 @@ class CVAttacker:
                     f"//p[text()='{self.detected_sliding_animal}']/.."
                 )
 
-                logger.info(f"✓ Found animal option for '{self.detected_sliding_animal}', clicking...")
+                logger.info(f"  Found animal option for '{self.detected_sliding_animal}', clicking...")
 
 
                 option_location = animal_option.location
@@ -2571,7 +2571,7 @@ class CVAttacker:
                         "//h2[contains(text(), 'You are Human')]"
                     )
                     if success_check:
-                        logger.info("✓ Third captcha solved successfully! Identified as Human!")
+                        logger.info("  Third captcha solved successfully! Identified as Human!")
                         return True
                 except:
                     pass
@@ -2583,7 +2583,7 @@ class CVAttacker:
                         "//h2[contains(text(), 'You are a Robot')]"
                     )
                     if robot_check:
-                        logger.warning("✗ Third captcha failed - identified as Robot")
+                        logger.warning("  Third captcha failed - identified as Robot")
                         return False
                 except:
                     pass
@@ -2593,7 +2593,7 @@ class CVAttacker:
                 return True
 
             except Exception as e:
-                logger.error(f"✗ Could not find or click animal option for '{self.detected_sliding_animal}': {e}")
+                logger.error(f"  Could not find or click animal option for '{self.detected_sliding_animal}': {e}")
 
 
                 try:
@@ -2601,7 +2601,7 @@ class CVAttacker:
                         By.XPATH,
                         f"//p[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{self.detected_sliding_animal.lower()}')]/.."
                     )
-                    logger.info(f"✓ Found animal option (case-insensitive), clicking...")
+                    logger.info(f"  Found animal option (case-insensitive), clicking...")
                     animal_option.click()
                     time.sleep(2)
                     return True
@@ -2611,7 +2611,7 @@ class CVAttacker:
                 return False
 
         except Exception as e:
-            logger.error(f"✗ Error solving third captcha: {e}")
+            logger.error(f"  Error solving third captcha: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -2764,29 +2764,29 @@ class CVAttacker:
 
 
                 if not rotation_success:
-                    logger.warning("⚠️ Rotation puzzle failed, attempting to skip...")
+                    logger.warning("  Rotation puzzle failed, attempting to skip...")
                     if self.click_skip_button():
-                        logger.info("✓ Successfully clicked skip button")
+                        logger.info("  Successfully clicked skip button")
                         time.sleep(2)
                     else:
-                        logger.warning("⚠️ Could not find or click skip button")
+                        logger.warning("  Could not find or click skip button")
                 else:
-                    logger.info("✓ Rotation puzzle solved, waiting for navigation...")
+                    logger.info("  Rotation puzzle solved, waiting for navigation...")
                     time.sleep(2)
 
 
                 logger.info("⏳ Waiting for animal detection to complete...")
                 animal_detection_thread.join(timeout=18)
                 if animal_detection_thread.is_alive():
-                    logger.warning("⚠️ Animal detection thread is still running after timeout")
+                    logger.warning("  Animal detection thread is still running after timeout")
                 else:
-                    logger.info("✓ Animal detection completed")
+                    logger.info("  Animal detection completed")
 
 
                 if self.detected_sliding_animal:
-                    logger.info(f"🎯 Detected animal: {self.detected_sliding_animal}")
+                    logger.info(f"  Detected animal: {self.detected_sliding_animal}")
                 else:
-                    logger.warning("⚠️ No animal was detected during monitoring")
+                    logger.warning("  No animal was detected during monitoring")
 
 
 
@@ -2826,13 +2826,13 @@ class CVAttacker:
 
 
                 current_url = self.driver.current_url
-                logger.info(f"📍 Current URL: {current_url}")
+                logger.info(f"  Current URL: {current_url}")
 
 
-                logger.info(f"🔍 Detected animal status: {self.detected_sliding_animal or 'None'}")
+                logger.info(f"  Detected animal status: {self.detected_sliding_animal or 'None'}")
 
                 if self.detected_sliding_animal:
-                    logger.info(f"✓ We have detected animal: {self.detected_sliding_animal}")
+                    logger.info(f"  We have detected animal: {self.detected_sliding_animal}")
 
 
                     try:
@@ -2840,7 +2840,7 @@ class CVAttacker:
                         question = WebDriverWait(self.driver, 8).until(
                             EC.presence_of_element_located((By.XPATH, "//p[contains(text(), 'Which floating animal did you see')]"))
                         )
-                        logger.info("✓ Found animal selection page - question is visible")
+                        logger.info("  Found animal selection page - question is visible")
 
 
                         third_captcha_success = self.solve_third_captcha()
@@ -2852,12 +2852,12 @@ class CVAttacker:
                             self.current_captcha_id = None
 
                         if third_captcha_success:
-                            logger.info("✓ Third captcha solved successfully!")
+                            logger.info("  Third captcha solved successfully!")
                         else:
-                            logger.warning("❌ Third captcha failed")
+                            logger.warning("  Third captcha failed")
 
                     except Exception as e:
-                        logger.warning(f"⚠️ Could not confirm animal selection page: {e}")
+                        logger.warning(f"  Could not confirm animal selection page: {e}")
                         logger.info("Attempting to solve anyway...")
 
 
@@ -2869,14 +2869,14 @@ class CVAttacker:
                             self.save_behavior_to_csv('captcha3', third_captcha_success)
                             self.current_captcha_id = None
                 else:
-                    logger.error("❌ No flying animal was detected, cannot solve third captcha")
-                    logger.info("🔍 Checking if we're on the animal selection page anyway...")
+                    logger.error("  No flying animal was detected, cannot solve third captcha")
+                    logger.info("  Checking if we're on the animal selection page anyway...")
 
 
                     try:
                         question = self.driver.find_element(By.XPATH, "//p[contains(text(), 'Which floating animal did you see')]")
                         if question:
-                            logger.info("✓ We ARE on the animal selection page, but don't know the answer")
+                            logger.info("  We ARE on the animal selection page, but don't know the answer")
 
                             third_captcha_success = self.solve_third_captcha()
                             result['third_captcha_result'] = {'success': False, 'error': 'No animal detected'}
@@ -2886,11 +2886,11 @@ class CVAttacker:
                                 self.save_behavior_to_csv('captcha3', False)
                                 self.current_captcha_id = None
                     except:
-                        logger.info("❌ Not on animal selection page either")
+                        logger.info("  Not on animal selection page either")
                         result['third_captcha_result'] = {'success': False, 'error': 'No animal detected'}
 
             except Exception as e:
-                logger.error(f"❌ Error with third captcha: {e}")
+                logger.error(f"  Error with third captcha: {e}")
                 result['third_captcha_result'] = {'success': False, 'error': str(e)}
                 import traceback
                 traceback.print_exc()
@@ -2989,7 +2989,7 @@ def main():
         print("\n" + "="*60)
         print("ATTACK RESULTS")
         print("="*60)
-        print(f"Overall Success: {'✓ YES' if result['success'] else '✗ NO'}")
+        print(f"Overall Success: {'  YES' if result['success'] else '  NO'}")
         print(f"Puzzle Type: {result['puzzle_type']}")
         print(f"Attempts: {result['attempts']}")
 
@@ -3005,7 +3005,7 @@ def main():
             print(f"  Decision: {overall_class['decision'].upper()}")
             print(f"  Probability (Human): {overall_class['prob_human']:.3f}")
             print(f"  Number of Events: {overall_class['num_events']}")
-            print(f"  Is Human: {'✓ YES' if overall_class['is_human'] else '✗ NO'}")
+            print(f"  Is Human: {'  YES' if overall_class['is_human'] else '  NO'}")
 
         if result.get('error'):
             print(f"\nError: {result['error']}")

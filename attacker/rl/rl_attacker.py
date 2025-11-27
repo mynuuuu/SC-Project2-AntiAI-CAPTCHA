@@ -464,7 +464,7 @@ class RLAttacker:
             # Look for success indicators
             success_indicators = [
                 "//*[contains(@class, 'success')]",
-                "//*[contains(text(), '✅')]",
+                "//*[contains(text(), ' ')]",
                 "//*[contains(text(), 'Captcha Solved')]",
                 "//button[contains(text(), 'Next')]",
                 "//button[contains(@class, 'next')]"
@@ -495,7 +495,7 @@ class RLAttacker:
         try:
             success_indicators = [
                 "//*[contains(@class, 'success')]",
-                "//*[contains(text(), '✅')]",
+                "//*[contains(text(), ' ')]",
                 "//*[contains(text(), 'Captcha Passed')]"
             ]
             for indicator in success_indicators:
@@ -667,7 +667,7 @@ class RLAttacker:
             if success:
                 results['success'] = True
                 results['successful_episodes'] += 1
-                logger.info("✓ CAPTCHA solved!")
+                logger.info("  CAPTCHA solved!")
             
             # Save policy periodically
             if (episode + 1) % 10 == 0:

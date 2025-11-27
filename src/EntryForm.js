@@ -156,7 +156,7 @@ export default function EntryForm() {
           fontSize: '14px',
           marginTop: '10px'
         }}>
-          ✓ CAPTCHA verified. You can proceed.
+            CAPTCHA verified. You can proceed.
         </p>
       )}
     </div>

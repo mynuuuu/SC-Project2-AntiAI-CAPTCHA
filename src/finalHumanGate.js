@@ -10,27 +10,27 @@ export async function evaluateFinalAccess({ isSolved, sessionId }) {
   try {
     // Get the classification from the slider sessions (stored by AnimalSelectionPage)
     const storedClassification = localStorage.getItem('final_classification');
-    
+
     if (!storedClassification) {
       // Fallback: try to get from slider classification
       const sliderClassification = localStorage.getItem('slider_classification');
       if (sliderClassification) {
         const classification = JSON.parse(sliderClassification);
         const isHuman = classification.is_human === true;
-        
+
         if (!isHuman) {
           return 'block';
         }
-        
+
         if (isSolved) {
           return 'allow';
         }
-        
+
         return 'retry';
       }
-      
+
       // No classification found - be conservative, allow retry
-      console.warn('⚠️ No classification found in localStorage, defaulting to retry');
+      console.warn('  No classification found in localStorage, defaulting to retry');
       return 'retry';
     }
 

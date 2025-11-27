@@ -109,7 +109,7 @@ export default function MorseCaptcha() {
 
             // decision === "retry" (or fallback) → human but failed, give another chance
             setStage("result");
-            setResult(solved ? "✅ Correct! (try again to proceed)" : "❌ Incorrect, try again.");
+            setResult(solved ? "  Correct! (try again to proceed)" : "  Incorrect, try again.");
         }
     };
 
@@ -129,17 +129,17 @@ export default function MorseCaptcha() {
         <div style={{ textAlign: "center", marginTop: "40px" }}>
             <h2>Morse Pattern CAPTCHA</h2>
 
-            {/* ✅ INTRO SCREEN */}
+            {/*   INTRO SCREEN */}
             {stage === "intro" && (
                 <>
                     <p style={{ maxWidth: 380, margin: "10px auto" }}>
                         This is a simple human check.
                         <br /><br />
-                        ✅ You will watch a box flash 3–5 times.
+                        You will watch a box flash 3–5 times.
                         <br />Short flash = DOT (•)
                         <br />Long flash = DASH (—)
                         <br /><br />
-                        ✅ Then you'll repeat the same pattern:
+                        Then you'll repeat the same pattern:
                         <br /><b>Click</b> for DOT (•)
                         <br /><b>Press & Hold</b> for DASH (—)
                         <br /><br />
@@ -155,14 +155,14 @@ export default function MorseCaptcha() {
                 </>
             )}
 
-            {/* ✅ COUNTDOWN SCREEN */}
+            {/*   COUNTDOWN SCREEN */}
             {(stage === "countdown" || stage === "watch") && (
                 <div style={{ fontSize: "48px", fontWeight: "bold", margin: "40px" }}>
                     {countdown}
                 </div>
             )}
 
-            {/* ✅ FLASH DISPLAY */}
+            {/*   FLASH DISPLAY */}
             {(stage === "watch" || stage === "repeat" || stage === "result" || stage === "countdown") && (
                 <div
                     style={{
@@ -176,20 +176,20 @@ export default function MorseCaptcha() {
                 />
             )}
 
-            {/* ✅ WATCHING INSTRUCTIONS */}
+            {/*   WATCHING INSTRUCTIONS */}
             {stage === "watch" && (
                 <p>
-                    ✅ Step 1: Watch carefully...
+                    Step 1: Watch carefully...
                     <br />Short flash = DOT (•)
                     <br />Long flash = DASH (—)
                 </p>
             )}
 
-            {/* ✅ REPEAT STAGE */}
+            {/*   REPEAT STAGE */}
             {stage === "repeat" && (
                 <>
                     <p>
-                        ✅ Step 2: Repeat the pattern
+                        Step 2: Repeat the pattern
                         <br /><b>Click</b> = DOT (•)
                         <br /><b>Hold</b> = DASH (—)
                     </p>
@@ -212,7 +212,7 @@ export default function MorseCaptcha() {
                 </>
             )}
 
-            {/* ✅ RESULT */}
+            {/*   RESULT */}
             {stage === "result" && (
                 <>
                     <p style={{ fontSize: "20px" }}>{result}</p>

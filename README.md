@@ -4,13 +4,13 @@ Anti AI CAPTCHA system built for Scalable Computing Main Project 2. A comprehens
 
 ## Features
 
-### 🎯 Slider CAPTCHA System
+###   Slider CAPTCHA System
 - Interactive puzzle-based verification
 - Multiple captcha instances
 - Success/failure visual feedback
 - Mobile and desktop support
 
-### 📊 Behavior Tracking (NEW!)
+###   Behavior Tracking (NEW!)
 - **Real-time mouse movement tracking**
 - **Automatic CSV export** of behavior data
 - **20+ metrics** captured per event (velocity, acceleration, direction, timing, etc.)

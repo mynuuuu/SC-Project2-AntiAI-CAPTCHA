@@ -47,7 +47,7 @@ for filename in human_files:
                 df['captcha_id'] = captcha_id
             if len(df) > 0:
                 df_human_list.append(df)
-                print(f"  ✓ {filename}: {len(df)} rows, {df['session_id'].nunique()} sessions")
+                print(f"    {filename}: {len(df)} rows, {df['session_id'].nunique()} sessions")
         except Exception as e:
             print(f"Error reading {filename}: {e}")
             try:
@@ -57,18 +57,18 @@ for filename in human_files:
                     df['captcha_id'] = captcha_id
                 if len(df) > 0:
                     df_human_list.append(df)
-                    print(f"  ✓ {filename}: {len(df)} rows (recovered)")
+                    print(f"    {filename}: {len(df)} rows (recovered)")
             except:
-                print(f"  ✗ Failed to read {filename}, skipping...")
+                print(f"    Failed to read {filename}, skipping...")
     else:
         print(f"{filename} not found, skipping...")
 
 if not df_human_list:
-    print("\n✗ Error: No human data found!")
+    print("\n  Error: No human data found!")
     exit(1)
 
 df_human = pd.concat(df_human_list, ignore_index=True)
-print(f"\n✓ Total human data: {len(df_human)} rows, {df_human['session_id'].nunique()} sessions")
+print(f"\n  Total human data: {len(df_human)} rows, {df_human['session_id'].nunique()} sessions")
 
 # ============================================================
 # STEP 2: Load Bot Data
@@ -90,9 +90,9 @@ for filename in bot_files:
                 df['captcha_id'] = captcha_id
             if len(df) > 0:
                 df_bot_list.append(df)
-                print(f"  ✓ {filename}: {len(df)} rows, {df['session_id'].nunique()} sessions")
+                print(f"    {filename}: {len(df)} rows, {df['session_id'].nunique()} sessions")
         except Exception as e:
-            print(f"  ⚠️  Error reading {filename}: {e}")
+            print(f"     Error reading {filename}: {e}")
             # Try with different parameters
             try:
                 df = pd.read_csv(filepath, error_bad_lines=False, warn_bad_lines=False, engine='python')
@@ -101,18 +101,18 @@ for filename in bot_files:
                     df['captcha_id'] = captcha_id
                 if len(df) > 0:
                     df_bot_list.append(df)
-                    print(f"  ✓ {filename}: {len(df)} rows (recovered)")
+                    print(f"    {filename}: {len(df)} rows (recovered)")
             except:
-                print(f"  ✗ Failed to read {filename}, skipping...")
+                print(f"    Failed to read {filename}, skipping...")
     else:
-        print(f"  ⚠️  {filename} not found, skipping...")
+        print(f"     {filename} not found, skipping...")
 
 if not df_bot_list:
-    print("\n⚠️  Warning: No bot data found! Will use anomaly detection approach.")
+    print("\n   Warning: No bot data found! Will use anomaly detection approach.")
     df_bot = pd.DataFrame()
 else:
     df_bot = pd.concat(df_bot_list, ignore_index=True)
-    print(f"\n✓ Total bot data: {len(df_bot)} rows, {df_bot['session_id'].nunique()} sessions")
+    print(f"\n  Total bot data: {len(df_bot)} rows, {df_bot['session_id'].nunique()} sessions")
 
 # ============================================================
 # STEP 3: Extract Features
@@ -148,33 +148,33 @@ def extract_features_from_sessions(df: pd.DataFrame, label: int) -> tuple:
                 labels_list.append(label)
                 session_ids.append(session_id)
         except Exception as e:
-            print(f"  ⚠️  Error extracting features for session {session_id}: {e}")
+            print(f"     Error extracting features for session {session_id}: {e}")
             continue
     
     return np.array(features_list), np.array(labels_list), session_ids
 
 print("\n[*] Extracting features from human sessions...")
 X_human, y_human, human_sessions = extract_features_from_sessions(df_human, label=1)
-print(f"  ✓ Extracted {len(X_human)} human feature vectors")
+print(f"    Extracted {len(X_human)} human feature vectors")
 
 if len(df_bot) > 0:
     print("\n[*] Extracting features from bot sessions...")
     X_bot, y_bot, bot_sessions = extract_features_from_sessions(df_bot, label=0)
-    print(f"  ✓ Extracted {len(X_bot)} bot feature vectors")
+    print(f"    Extracted {len(X_bot)} bot feature vectors")
     
     # Combine human and bot data
     X = np.vstack([X_human, X_bot])
     y = np.hstack([y_human, y_bot])
-    print(f"\n✓ Combined dataset: {len(X)} samples ({len(X_human)} human, {len(X_bot)} bot)")
+    print(f"\n  Combined dataset: {len(X)} samples ({len(X_human)} human, {len(X_bot)} bot)")
 else:
     X = X_human
     y = y_human
-    print(f"\n⚠️  Using only human data: {len(X)} samples (anomaly detection mode)")
+    print(f"\n   Using only human data: {len(X)} samples (anomaly detection mode)")
 
 # Get feature names (from first extraction)
 # We'll need to determine feature count from the extracted vector
 feature_count = X.shape[1] if len(X) > 0 else 0
-print(f"  ✓ Feature count: {feature_count}")
+print(f"    Feature count: {feature_count}")
 
 # ============================================================
 # STEP 4: Train/Test Split
@@ -210,7 +210,7 @@ print("=" * 60)
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
-print("  ✓ Features scaled (mean=0, std=1)")
+print("    Features scaled (mean=0, std=1)")
 
 # ============================================================
 # STEP 6: Train Models
@@ -232,7 +232,7 @@ if len(df_bot) > 0 and len(X_bot) > 0:
         class_weight='balanced'
     )
     rf_model.fit(X_train_scaled, y_train)
-    print("  ✓ Random Forest trained")
+    print("    Random Forest trained")
     
     # Gradient Boosting Classifier
     print("\n📈 Training Gradient Boosting...")
@@ -243,7 +243,7 @@ if len(df_bot) > 0 and len(X_bot) > 0:
         random_state=42
     )
     gb_model.fit(X_train_scaled, y_train)
-    print("  ✓ Gradient Boosting trained")
+    print("    Gradient Boosting trained")
     
     # ============================================================
     # STEP 7: Evaluate Models
@@ -256,7 +256,7 @@ if len(df_bot) > 0 and len(X_bot) > 0:
     rf_pred = rf_model.predict(X_test_scaled)
     rf_proba = rf_model.predict_proba(X_test_scaled)[:, 1]
     
-    print("\n📊 Random Forest Results:")
+    print("\n  Random Forest Results:")
     print(classification_report(y_test, rf_pred, target_names=['Bot', 'Human']))
     print(f"  Accuracy: {accuracy_score(y_test, rf_pred):.4f}")
     print(f"  ROC-AUC: {roc_auc_score(y_test, rf_proba):.4f}")
@@ -267,7 +267,7 @@ if len(df_bot) > 0 and len(X_bot) > 0:
     gb_pred = gb_model.predict(X_test_scaled)
     gb_proba = gb_model.predict_proba(X_test_scaled)[:, 1]
     
-    print("\n📊 Gradient Boosting Results:")
+    print("\n  Gradient Boosting Results:")
     print(classification_report(y_test, gb_pred, target_names=['Bot', 'Human']))
     print(f"  Accuracy: {accuracy_score(y_test, gb_pred):.4f}")
     print(f"  ROC-AUC: {roc_auc_score(y_test, gb_proba):.4f}")
@@ -278,7 +278,7 @@ if len(df_bot) > 0 and len(X_bot) > 0:
     ensemble_proba = (rf_proba + gb_proba) / 2
     ensemble_pred = (ensemble_proba > 0.5).astype(int)
     
-    print("\n📊 Ensemble Results (average of both models):")
+    print("\n  Ensemble Results (average of both models):")
     print(classification_report(y_test, ensemble_pred, target_names=['Bot', 'Human']))
     print(f"  Accuracy: {accuracy_score(y_test, ensemble_pred):.4f}")
     print(f"  ROC-AUC: {roc_auc_score(y_test, ensemble_proba):.4f}")
@@ -292,7 +292,7 @@ if len(df_bot) > 0 and len(X_bot) > 0:
         'feature_count': feature_count
     }
 else:
-    print("\n⚠️  No bot data available - cannot train supervised models")
+    print("\n   No bot data available - cannot train supervised models")
     print("   Please generate bot data first or use anomaly detection approach")
     models_to_save = None
 
@@ -326,21 +326,21 @@ if models_to_save:
     }
     joblib.dump(ensemble_model, ensemble_model_path)
     
-    print(f"  ✓ Random Forest saved: {rf_model_path}")
-    print(f"  ✓ Gradient Boosting saved: {gb_model_path}")
-    print(f"  ✓ Scaler saved: {scaler_path}")
-    print(f"  ✓ Ensemble model saved: {ensemble_model_path}")
+    print(f"    Random Forest saved: {rf_model_path}")
+    print(f"    Gradient Boosting saved: {gb_model_path}")
+    print(f"    Scaler saved: {scaler_path}")
+    print(f"    Ensemble model saved: {ensemble_model_path}")
 else:
-    print("  ⚠️  No models to save")
+    print("     No models to save")
 
 print("\n" + "=" * 60)
-print("✅ TRAINING COMPLETE!")
+print("  TRAINING COMPLETE!")
 print("=" * 60)
 print(f"\nModels saved in: {MODELS_DIR}")
 print("\n📌 Model Type: Supervised Classification (Human vs Bot)")
 print("   - Trained on both human and bot data")
 print("   - Uses Random Forest + Gradient Boosting ensemble")
-print("\n💡 Next steps:")
+print("\n  Next steps:")
 print("   1. Test the model with new data")
 print("   2. Integrate into captcha verification system")
 print("   3. Monitor performance and retrain as needed")
