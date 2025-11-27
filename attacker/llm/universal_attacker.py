@@ -17,9 +17,21 @@ from PIL import Image
 import requests
 import re
 import sys
+import os
+import argparse
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    env_path = BASE_DIR / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    # python-dotenv not installed, skip .env loading
+    pass
 SCRIPTS_DIR = BASE_DIR / "scripts"
 DATA_DIR = BASE_DIR / "data"  # Data directory for saving bot behavior
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -830,7 +842,7 @@ NOW CREATE THE ACTION PLAN:"""
                 page_html = self.get_page_html()
                 
                 # Analyze with Gemini
-                print("🤖 Asking Gemini to analyze and solve...\n")
+                print("Asking Gemini to analyze and solve...\n")
                 analysis = self.analyze_captcha_with_gemini(
                     screenshot, 
                     page_html, 
@@ -843,7 +855,7 @@ NOW CREATE THE ACTION PLAN:"""
                 print("="*60 + "\n")
                 
                 # Get action plan
-                print("🎬 Getting executable action plan...\n")
+                print("Getting executable action plan...\n")
                 action_plan = self.get_action_plan_from_gemini(analysis, screenshot)
                 
                 # Execute actions
@@ -1081,29 +1093,43 @@ Respond with JSON:
 
 # Usage example
 if __name__ == "__main__":
-    # Configuration
-    GEMINI_API_KEY = "AIzaSyCzrluLeVqGZCZ3kJb9tOTlUrA3CSN0Xik"  # Replace with your API key
-    TARGET_URL = "http://localhost:3000"  # Replace with your CAPTCHA URL
+    parser = argparse.ArgumentParser(description='LLM-Powered CAPTCHA Attacker')
+    parser.add_argument('url', help='Target URL with CAPTCHA')
+    parser.add_argument('--gemini-api-key', type=str, default=None,
+                       help='Gemini API key (or set GEMINI_API_KEY env var or in .env file)')
+    parser.add_argument('--model-name', type=str, default='gemini-2.5-flash',
+                       help='Gemini model to use')
+    
+    args = parser.parse_args()
+    
+    # Get API key from argument, environment variable, or .env file
+    if not args.gemini_api_key:
+        args.gemini_api_key = os.environ.get('GEMINI_API_KEY')
+        if not args.gemini_api_key:
+            print("ERROR: --gemini-api-key required for LLM attacker")
+            print("Or set GEMINI_API_KEY environment variable or in .env file")
+            sys.exit(1)
     
     print("="*60)
-    print("🤖 LLM-POWERED CAPTCHA ATTACKER (GEMINI)")
+    print("LLM-POWERED CAPTCHA ATTACKER (GEMINI)")
     print("="*60)
-    print(f"Target: {TARGET_URL}")
+    print(f"Target: {args.url}")
     print(f"ML Core: Using local ml_core.predict_slider()")
-    print(f"LLM: Google Gemini")
+    print(f"LLM: Google Gemini ({args.model_name})")
     print("="*60 + "\n")
     
     # Create attacker
     attacker = LLMCaptchaAttacker(
-        gemini_api_key=GEMINI_API_KEY,
-        target_url=TARGET_URL
+        gemini_api_key=args.gemini_api_key,
+        target_url=args.url,
+        model_name=args.model_name
     )
     
     # Run attack
     result = attacker.run_attack()
     
     print("\n" + "="*60)
-    print("🎬 ATTACK COMPLETE")
+    print("ATTACK COMPLETE")
     print("="*60)
     if result:
         print("  Classification Result:")
