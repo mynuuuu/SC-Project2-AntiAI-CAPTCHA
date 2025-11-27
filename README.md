@@ -85,17 +85,52 @@ SC-Project2-AntiAI-CAPTCHA/
    cd behaviour_analysis
    python behavior_server.py
    ```
-   Server runs at `http://localhost:5001`
+   By default the server binds to `http://localhost:5001`. You can override the port,
+   data directory, and CSV filename with environment variables (see *Environment Variables*).
    
    Keep this terminal open!
 
 2. **Start the React app (in a new terminal):**
    ```bash
+   # from project root
+   echo "REACT_APP_API_BASE_URL=http://localhost:5001" > .env.local
    npm start
    ```
+   The React app reads `REACT_APP_API_BASE_URL` to know where to send behavior data.
+   When deploying to Vercel, set this env var to your public backend URL.
    The app will open at `http://localhost:3000`
 
-See [SERVER_SETUP.md](SERVER_SETUP.md) for detailed instructions.
+See [SERVER_SETUP.md](SERVER_SETUP.md) for detailed instructions and
+[`RENDER_DEPLOYMENT.md`](RENDER_DEPLOYMENT.md) for Render hosting steps.
+
+## Environment Variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `REACT_APP_API_BASE_URL` | `http://localhost:5001` | React/Vercel frontend base URL for the Flask API |
+| `PORT` | `5001` | Port for `behavior_server.py` (Render sets this automatically) |
+| `FLASK_DEBUG` | `false` | Enables Flask debug mode locally |
+| `DATA_DIR` | `<project_root>/data` | Directory where CSV/session files are written |
+| `CSV_FILENAME` | `user_behavior_events.csv` | Only used by the legacy `/save_events` endpoint; captcha-specific data still writes to `data/captcha1.csv`, `captcha2.csv`, `captcha3.csv`, etc. |
+| `SERVICE_NAME` | `Behavior Data Collection Server` | Printed on server start |
+| `BEHAVIOR_SERVER_URL` | `http://localhost:5001/save_captcha_events` | Used by attacker tooling; override when pointing to prod |
+
+Create `.env.local` (React) and `.env` (backend) files as needed to override these values for development vs production.
+
+### Hybrid Setup: Local Attackers, Hosted UI/API
+
+You can keep the attackers and ML tooling local while the “basic” CAPTCHA stack runs on Render (backend) + Vercel (frontend):
+
+1. **Deploy backend** using `RENDER_DEPLOYMENT.md` and set `REACT_APP_API_BASE_URL` in Vercel to the Render URL. Regular users now hit the hosted stack.
+2. **Local attackers**: leave `BEHAVIOR_SERVER_URL` unset so it defaults to `http://localhost:5001/save_captcha_events`, or explicitly export it in your shell before running attacker scripts:
+   ```bash
+   export BEHAVIOR_SERVER_URL=http://localhost:5001/save_captcha_events
+   python attacker/sycophancy/llm_sycophancy_attacker.py
+   ```
+3. **Local backend for research**: run `python behaviour_analysis/behavior_server.py` locally when you want to feed attackers into a private instance; this won’t interfere with the hosted service.
+4. **Switching contexts**: point the attackers to the hosted backend only when you intentionally want to probe prod—change `BEHAVIOR_SERVER_URL` to the Render URL and revert when done.
+
+This keeps production traffic separated while you continue iterating on attacker logic and ML experiments entirely on your dev machine.
 
 ## Using the Behavior Tracking
 

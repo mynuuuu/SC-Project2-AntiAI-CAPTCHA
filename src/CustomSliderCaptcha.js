@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import './CustomSliderCaptcha.css';
 import useBehaviorTracking from './useBehaviorTracking';
 import { shouldCaptureBehavior } from './utils/behaviorMode';
+import { BEHAVIOR_API } from './config/apiConfig';
 
 const createInitialInteractionStats = () => ({
   dragCount: 0,
@@ -253,7 +254,7 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
       };
 
       try {
-        const serverUrl = 'http://localhost:5001/save_captcha_events';
+        const serverUrl = BEHAVIOR_API.saveCaptchaEvents;
         const response = await fetch(serverUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
