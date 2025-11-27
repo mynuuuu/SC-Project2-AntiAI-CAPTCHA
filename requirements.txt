@@ -1,3 +1,9 @@
+# Python Version Requirements
+# REQUIRED: Python 3.10+ (Python 3.9 has compatibility issues with google-generativeai)
+# Python 3.9 will show warnings about importlib.metadata.packages_distributions
+# For Python 3.9 compatibility, importlib-metadata is required (but may not fully resolve issues)
+importlib-metadata>=6.0.0; python_version<"3.10"
+
 # Core Web Automation
 selenium>=4.15.0
 webdriver-manager>=4.0.0
@@ -24,3 +30,8 @@ uvicorn>=0.24.0
 
 # HTTP Requests
 requests>=2.31.0
+# Note: urllib3 v2+ shows warnings on macOS with LibreSSL, but is required by selenium>=4.36.0
+# The warning is harmless - urllib3 v2 works with LibreSSL 2.8.3+ despite the warning
+
+# Environment Variables
+python-dotenv>=1.0.0
