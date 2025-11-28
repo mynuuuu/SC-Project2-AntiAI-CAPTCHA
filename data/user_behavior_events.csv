@@ -1,0 +1,1 @@
+session_id,timestamp,time_since_start,time_since_last_event,event_type,client_x,client_y,relative_x,relative_y,page_x,page_y,screen_x,screen_y,button,buttons,ctrl_key,shift_key,alt_key,meta_key,velocity,acceleration,direction,user_agent,screen_width,screen_height,viewport_width,viewport_height,user_type,challenge_type,captcha_id,metadata_json

@@ -14,8 +14,8 @@ import os
 # Add current directory to sys.path to allow importing ml_core
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from ml_core import predict_layer, predict_multi_layer
-from ml_core import predict_slider, predict_layer, predict_human_prob
+from ml_core import predict_layer
+from ml_core import predict_slider, predict_human_prob
 
 app = FastAPI(
     title="Anti-AI CAPTCHA ML Server",
@@ -49,6 +49,8 @@ def classify_session(payload: SessionPayload):
         - decision: "human" or "bot"
         - details: Additional prediction information
     """
+
+    print(payload)
     try:
         # Convert events list -> DataFrame
         events_data = [e.model_dump() for e in payload.events]
