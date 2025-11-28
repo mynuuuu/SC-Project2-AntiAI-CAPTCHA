@@ -132,6 +132,26 @@ function AnimalRotationCaptcha({ onSuccess }) {
       );
       if (result.success) {
         console.log('  Data saved to captcha2.csv');
+
+        // Display ML classification results
+        if (result.result && result.result.classification) {
+          const classification = result.result.classification;
+          console.log(`\n`);
+          console.log(`ML CLASSIFICATION RESULTS (Captcha 2)`);
+          console.log(`Decision: ${classification.decision.toUpperCase()}`);
+          console.log(`Probability (Human): ${classification.prob_human.toFixed(3)}`);
+          console.log(`Total Events: ${classification.num_events}`);
+          console.log(`Is Human: ${classification.is_human ? '  YES' : '  NO'}`);
+          console.log(`\n`);
+
+          // Store classification result for final gate (Morse captcha)
+          localStorage.setItem('rotation_classification', JSON.stringify({
+            is_human: classification.is_human,
+            prob_human: classification.prob_human,
+            decision: classification.decision,
+            captcha_id: CAPTCHA_ID
+          }));
+        }
       } else {
         console.error('Failed to save rotation captcha data:', result.error);
       }
@@ -208,7 +228,7 @@ function AnimalRotationCaptcha({ onSuccess }) {
         <p
           className={
             'rotation-captcha-message ' +
-            (message.includes('Passed')
+            (message.includes('Captcha verified') || message.includes('Passed')
               ? 'rotation-captcha-message-success'
               : 'rotation-captcha-message-error')
           }

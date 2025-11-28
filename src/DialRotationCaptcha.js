@@ -333,12 +333,12 @@ function DialRotationCaptcha({ onSuccess }) {
 
     // Normal captcha verification flow
     if (isSuccess) {
-      setMessage('  Captcha Solved');
+      setMessage('Captcha verified');
       if (onSuccess) {
         setTimeout(onSuccess, 1000);
       }
     } else {
-      setMessage('  Try Again!');
+      setMessage('Try Again');
     }
   };
 
@@ -451,7 +451,7 @@ function DialRotationCaptcha({ onSuccess }) {
       </div>
 
       {message && (
-        <p className={`dial-captcha-message ${message.includes('Solved')
+        <p className={`dial-captcha-message ${message.includes('Captcha verified') || message.includes('verified')
           ? 'dial-captcha-message-success'
           : 'dial-captcha-message-error'
           }`}>

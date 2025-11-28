@@ -84,12 +84,8 @@ function AnimalRotationPage() {
         )}
       </AnimatePresence>
 
-      <header className="App-header">
-        <h1>Turing Tester</h1>
-        <p>Complete the dial rotation captcha</p>
-      </header>
-
       <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
+        <h3 style={{ color: '#000', textAlign: 'center', marginBottom: '20px', fontSize: '24px', fontWeight: '600' }}>Captcha 2</h3>
         <button
           onClick={handleBack}
           style={{

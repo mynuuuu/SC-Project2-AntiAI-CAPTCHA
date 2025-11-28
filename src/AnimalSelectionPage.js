@@ -289,14 +289,13 @@ function AnimalSelectionPage() {
                 </div>
             )}
             <header className="App-header">
-                <h1>Verification</h1>
-                <p>Which floating animal did you see?</p>
+                <h1 style={{ color: '#000', fontSize: '24px', fontWeight: '600', marginTop: '40px', marginBottom: '30px' }}>Captcha 3</h1>
             </header>
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
                 gap: '30px',
-                padding: '40px',
+                padding: '0 40px 40px 40px',
                 maxWidth: '1000px',
                 margin: '0 auto'
             }}>
@@ -344,8 +343,7 @@ function AnimalSelectionPage() {
             </div>
             {isSuccess && (
                 <div className="success-message">
-                    <h2>Captcha Verified!</h2>
-                    <p>Click Next to continue to the rotation captcha.</p>
+                    <h2>Captcha verified</h2>
                     <button
                         onClick={handleNext}
                         style={{
@@ -370,7 +368,7 @@ function AnimalSelectionPage() {
             )}
             {!isSuccess && isAnswered && (
                 <div className="success-message">
-                    <h2>Captcha Verification Failed!</h2>
+                    <h2 style={{ color: '#dc3545' }}>Captcha Verification Failed!</h2>
                     <button
                         onClick={goHome}
                         style={{

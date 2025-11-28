@@ -68,15 +68,10 @@ function SliderCaptchaPage() {
 
   return (
     <div className="App">
-      <header className="App-header">
-        <h1>Turing Tester</h1>
-        <p>Complete the captcha to verify you're human</p>
-      </header>
-
       <div className="captcha-container">
         {captchaImages.map((captcha) => (
           <div key={captcha.id} className="captcha-item">
-            <h3>{captcha.title}</h3>
+            <h3 style={{ color: '#000', textAlign: 'center', marginBottom: '20px', fontSize: '24px', fontWeight: '600' }}>{captcha.title}</h3>
             <div className="captcha-wrapper">
               <CustomSliderCaptcha
                 key={resetKeys[captcha.id]}
@@ -88,9 +83,7 @@ function SliderCaptchaPage() {
             </div>
             {captchaStatus[captcha.id] && (
               <div className="captcha-status">
-                <div className="status-verified">
-                  <span>  Verified Successfully!</span>
-                </div>
+               
               </div>
             )}
           </div>
@@ -99,8 +92,7 @@ function SliderCaptchaPage() {
 
       {allCaptchasVerified && (
         <div className="success-message">
-          <h2>🎉Slider Captcha Verified!</h2>
-          <p>Click Next to continue to the rotation captcha.</p>
+          <h2>Captcha Verified</h2>
           <button
             onClick={handleNext}
             style={{
