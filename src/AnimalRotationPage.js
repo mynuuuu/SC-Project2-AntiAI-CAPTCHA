@@ -35,9 +35,9 @@ function AnimalRotationPage() {
   // Random configuration for the single animal (generated once)
   const animalConfig = useState(() => ({
     animal: animalImages[Math.floor(Math.random() * animalImages.length)],
-    y: Math.random() * 60 + 10, 
-    duration: Math.random() * 3 + 5, 
-    size: Math.random() * 40 + 80, 
+    y: Math.random() * 60 + 10,
+    duration: Math.random() * 3 + 5,
+    size: Math.random() * 40 + 80,
     delay: Math.random() * 2 + 1,
   }))[0];
 
@@ -116,9 +116,22 @@ function AnimalRotationPage() {
           ← Back
         </button>
         <DialRotationCaptcha
-          onSuccess={() => navigate('/animal-selection', {
-            state: { seenAnimal: animalConfig.animal.name }
-          })}
+          onSuccess={(result) => {
+            if (result && result.classification) {
+              const classification = result.classification;
+              localStorage.setItem('rotation_classification', JSON.stringify({
+                is_human: classification.is_human,
+                prob_human: classification.prob_human,
+                decision: classification.decision,
+                captcha_id: 'captcha2'
+              }));
+              console.log(`  Stored rotation classification: ${classification.decision} (prob: ${classification.prob_human.toFixed(3)})`);
+            }
+
+            navigate('/animal-selection', {
+              state: { seenAnimal: animalConfig.animal.name }
+            });
+          }}
         />
       </div>
     </div>

@@ -279,6 +279,7 @@ function DialRotationCaptcha({ onSuccess }) {
     const interactionDuration = stats.startedAt ? now - stats.startedAt : 0;
 
     // Send data to server with rotation-specific metadata
+    let result = null;
     if (shouldLogBehavior && events.length > 0) {
       const metadata = {
         target_direction: randomAnimal.name,
@@ -300,6 +301,8 @@ function DialRotationCaptcha({ onSuccess }) {
         behavior_stats: behaviorStats,
       };
 
+
+
       try {
         const serverUrl = BEHAVIOR_API.saveCaptchaEvents;
         const response = await fetch(serverUrl, {
@@ -315,7 +318,9 @@ function DialRotationCaptcha({ onSuccess }) {
           }),
         });
 
-        const result = await response.json();
+        console.log(response);
+
+        result = await response.json();
 
         if (result.success) {
           console.log(`  Rotation data saved to ${CAPTCHA_ID}.csv`);
@@ -335,7 +340,7 @@ function DialRotationCaptcha({ onSuccess }) {
     if (isSuccess) {
       setMessage('  Captcha Solved');
       if (onSuccess) {
-        setTimeout(onSuccess, 1000);
+        setTimeout(() => onSuccess(result), 1000);
       }
     } else {
       setMessage('  Try Again!');
