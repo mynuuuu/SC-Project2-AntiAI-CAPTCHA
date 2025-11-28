@@ -39,14 +39,6 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 class LLMCaptchaAttacker:
     def __init__(self, gemini_api_key, target_url, model_name="gemini-2.5-flash"):
-        """
-        Initialize the CAPTCHA attacker with LLM capabilities
-        
-        Args:
-            gemini_api_key: API key for Google Gemini
-            target_url: URL of the CAPTCHA challenge
-            model_name: Gemini model to use (default: gemini-2.5-flash)
-        """
         genai.configure(api_key=gemini_api_key)
         self.model = genai.GenerativeModel(model_name)
         self.target_url = target_url
@@ -58,19 +50,14 @@ class LLMCaptchaAttacker:
         self.conversation_history = []
         
     def _generate_session_id(self):
-        """Generate unique session ID"""
         return f"session_{int(time.time())}_{random.randint(1000, 9999)}"
     
     def setup_driver(self):
-        """Setup Selenium WebDriver with human-like settings"""
         options = webdriver.ChromeOptions()
-        
-        # Add arguments to appear more human-like
         options.add_argument('--disable-blink-features=AutomationControlled')
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option('useAutomationExtension', False)
         
-        # Random user agent
         user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -80,7 +67,6 @@ class LLMCaptchaAttacker:
         
         self.driver = webdriver.Chrome(options=options)
         
-        # Execute CDP commands to hide automation
         self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
             'source': '''
                 Object.defineProperty(navigator, 'webdriver', {
@@ -92,7 +78,6 @@ class LLMCaptchaAttacker:
         self.driver.maximize_window()
         
     def capture_screenshot(self):
-        """Capture screenshot and convert to base64"""
         screenshot = self.driver.get_screenshot_as_png()
         img = Image.open(BytesIO(screenshot))
         buffered = BytesIO()
@@ -100,16 +85,12 @@ class LLMCaptchaAttacker:
         return base64.b64encode(buffered.getvalue()).decode()
     
     def get_page_html(self):
-        """Get page HTML for context"""
         try:
             return self.driver.page_source[:5000]  # First 5000 chars
         except:
             return ""
     
     def analyze_captcha_with_gemini(self, screenshot_base64, page_html="", previous_attempt_failed=False):
-        """
-        Use Gemini to analyze the CAPTCHA and provide solving strategy with actual solutions
-        """
         prompt = """You are an expert CAPTCHA solver with vision capabilities. Analyze this CAPTCHA and SOLVE IT.
 
   CAPTCHA TYPES & HOW TO SOLVE:
@@ -224,21 +205,18 @@ ACTION: Click the checkbox element (usually triggers validation or additional ch
         if page_html:
             prompt += f"\n\n  HTML CONTEXT (first 5000 chars):\n{page_html[:5000]}"
 
-        # Convert base64 to PIL Image for Gemini
         image_data = base64.b64decode(screenshot_base64)
         image = Image.open(BytesIO(image_data))
 
         try:
             response = self.model.generate_content([prompt, image])
             response_text = response.text
-            
-            # Add to conversation history
+
             self.conversation_history.append({
                 "prompt": prompt[:500] + "...",
                 "response": response_text
             })
-            
-            # Keep only last 4 exchanges
+
             if len(self.conversation_history) > 8:
                 self.conversation_history = self.conversation_history[-8:]
             
@@ -249,9 +227,6 @@ ACTION: Click the checkbox element (usually triggers validation or additional ch
             return f"Error: {e}"
     
     def get_action_plan_from_gemini(self, analysis, screenshot_base64):
-        """
-        Get specific executable actions from Gemini based on analysis
-        """
         prompt = f"""Based on your analysis:
 
 {analysis}
@@ -261,11 +236,11 @@ Now provide SPECIFIC, EXECUTABLE actions as a JSON array. Be very precise with s
   SELECTOR STRATEGIES (try in order):
 1. ID: #captcha-input, #recaptcha-anchor, #submit-button
 2. Name: input[name="captcha"], input[name="answer"]
-3. Class: .captcha-field, .g-recaptcha, .h-captcha, .submit-btn
+3. Class: .captcha-field, .g-recaptcha, .h-captcha, .submit-btn, .slider-button, .slider-handle
 4. Type: input[type="text"], input[type="checkbox"]
 5. Text: button containing "Submit", "Verify", "Next"
 6. Aria-label: [aria-label="I'm not a robot"]
-7. XPath: //input[@placeholder="Enter code"], //iframe[contains(@src,'recaptcha')]
+7. XPath: //input[@placeholder="Enter code"], //iframe[contains(@src,'recaptcha')], //div[contains(@class, 'slider-button')]
 8. Data attributes: [data-testid="captcha-input"]
 
   ACTION TYPES:
@@ -329,12 +304,19 @@ Now provide SPECIFIC, EXECUTABLE actions as a JSON array. Be very precise with s
 ```json
 {{
   "type": "drag",
-  "selector": ".slider-handle",
+  "selector": ".slider-button",
   "offset_x": 250,
   "offset_y": 0,
   "description": "Drag slider to the right"
 }}
 ```
+
+For slider CAPTCHAs, common selectors include:
+- .slider-button (most common)
+- .slider-handle
+- [class*="slider-button"]
+- div containing arrow symbol (→) near "Slide to verify" text
+- Any draggable button within .slider-track container
 
   FOR THIS CAPTCHA, provide the complete action sequence as JSON:
 
@@ -362,8 +344,6 @@ Now provide SPECIFIC, EXECUTABLE actions as a JSON array. Be very precise with s
 6. Provide fallback options
 
 NOW CREATE THE ACTION PLAN:"""
-
-        # Convert base64 to PIL Image
         image_data = base64.b64decode(screenshot_base64)
         image = Image.open(BytesIO(image_data))
 
@@ -375,15 +355,10 @@ NOW CREATE THE ACTION PLAN:"""
             return f'{{"error": "{e}"}}'
     
     def human_like_mouse_movement(self, start_x, start_y, end_x, end_y):
-        """
-        Simulate human-like mouse movement with bezier curves
-        """
         actions = ActionChains(self.driver)
-        
-        # Calculate control points for bezier curve
+
         steps = random.randint(20, 40)
-        
-        # Add some randomness to control points
+
         ctrl1_x = start_x + (end_x - start_x) * 0.33 + random.randint(-50, 50)
         ctrl1_y = start_y + (end_y - start_y) * 0.33 + random.randint(-50, 50)
         ctrl2_x = start_x + (end_x - start_x) * 0.66 + random.randint(-50, 50)
@@ -392,12 +367,10 @@ NOW CREATE THE ACTION PLAN:"""
         points = []
         for i in range(steps):
             t = i / steps
-            # Cubic bezier curve formula
             x = (1-t)**3 * start_x + 3*(1-t)**2*t * ctrl1_x + 3*(1-t)*t**2 * ctrl2_x + t**3 * end_x
             y = (1-t)**3 * start_y + 3*(1-t)**2*t * ctrl1_y + 3*(1-t)*t**2 * ctrl2_y + t**3 * end_y
             points.append((int(x), int(y)))
-        
-        # Move through points with varying speed
+
         prev_x, prev_y = start_x, start_y
         for i, (x, y) in enumerate(points):
             self._record_mouse_move(x, y, prev_x, prev_y)
@@ -407,7 +380,6 @@ NOW CREATE THE ACTION PLAN:"""
         return points[-1] if points else (end_x, end_y)
     
     def _record_mouse_move(self, client_x, client_y, prev_x=None, prev_y=None):
-        """Record mouse movement event"""
         current_time = time.time()
         
         if self.start_time is None:
@@ -416,8 +388,7 @@ NOW CREATE THE ACTION PLAN:"""
         
         time_since_start = current_time - self.start_time
         time_since_last = current_time - self.last_event_time
-        
-        # Calculate velocity and acceleration
+
         velocity = 0
         acceleration = 0
         direction = 0
@@ -426,8 +397,7 @@ NOW CREATE THE ACTION PLAN:"""
             distance = np.sqrt((client_x - prev_x)**2 + (client_y - prev_y)**2)
             velocity = distance / time_since_last if time_since_last > 0 else 0
             direction = np.arctan2(client_y - prev_y, client_x - prev_x) * 180 / np.pi
-            
-            # Calculate acceleration from previous velocity
+
             if len(self.session_data) > 0:
                 prev_velocity = self.session_data[-1].get('velocity', 0)
                 acceleration = (velocity - prev_velocity) / time_since_last if time_since_last > 0 else 0
@@ -482,7 +452,6 @@ NOW CREATE THE ACTION PLAN:"""
         self.last_event_time = current_time
     
     def _record_click(self, client_x, client_y, button=0):
-        """Record click event"""
         current_time = time.time()
         time_since_start = current_time - self.start_time
         time_since_last = current_time - self.last_event_time
@@ -537,7 +506,6 @@ NOW CREATE THE ACTION PLAN:"""
         self.last_event_time = current_time
     
     def _record_keypress(self, key):
-        """Record keypress event"""
         current_time = time.time()
         time_since_start = current_time - self.start_time
         time_since_last = current_time - self.last_event_time
@@ -589,10 +557,8 @@ NOW CREATE THE ACTION PLAN:"""
         self.last_event_time = current_time
     
     def human_like_typing(self, element, text):
-        """Type text with human-like delays and occasional mistakes"""
         for char in text:
-            # Occasionally make a typo and correct it
-            if random.random() < 0.05:  # 5% chance of typo
+            if random.random() < 0.05: 
                 wrong_char = random.choice('abcdefghijklmnopqrstuvwxyz')
                 element.send_keys(wrong_char)
                 self._record_keypress(wrong_char)
@@ -603,40 +569,28 @@ NOW CREATE THE ACTION PLAN:"""
             
             element.send_keys(char)
             self._record_keypress(char)
-            # Variable typing speed
             time.sleep(random.uniform(0.05, 0.2))
     
     def human_like_click(self, element):
-        """Perform human-like click with movement and delays"""
-        # Get element location
         location = element.location
         size = element.size
-        
-        # Calculate center with some randomness
         target_x = location['x'] + size['width'] / 2 + random.randint(-5, 5)
         target_y = location['y'] + size['height'] / 2 + random.randint(-5, 5)
-        
-        # Get current "mouse" position (simulate from a random starting point)
+
         start_x = random.randint(100, 500)
         start_y = random.randint(100, 500)
-        
-        # Move mouse to element
+
         self.human_like_mouse_movement(start_x, start_y, int(target_x), int(target_y))
-        
-        # Small pause before click
+
         time.sleep(random.uniform(0.1, 0.3))
-        
-        # Record click
+
         self._record_click(int(target_x), int(target_y))
-        
-        # Perform actual click
+
         element.click()
-        
-        # Small pause after click
+ 
         time.sleep(random.uniform(0.2, 0.5))
     
     def find_element_flexible(self, selector, selector_type="css"):
-        """Try multiple methods to find an element"""
         element = None
         
         try:
@@ -654,8 +608,7 @@ NOW CREATE THE ACTION PLAN:"""
                 element = self.driver.find_element(By.TAG_NAME, selector)
         except:
             pass
-        
-        # Fallback: try all methods
+
         if not element:
             methods = [
                 (By.CSS_SELECTOR, selector),
@@ -676,29 +629,25 @@ NOW CREATE THE ACTION PLAN:"""
         return element
     
     def execute_actions(self, action_plan):
-        """Execute the action plan from Claude"""
         try:
-            # Parse JSON from action plan
             action_text = action_plan
             if "```json" in action_text:
                 action_text = action_text.split("```json")[1].split("```")[0].strip()
             elif "```" in action_text:
                 action_text = action_text.split("```")[1].split("```")[0].strip()
-            
-            # Extract JSON object
+
             json_match = re.search(r'\{[\s\S]*\}', action_text)
             if json_match:
                 action_text = json_match.group(0)
             
             plan = json.loads(action_text)
             
-            print(f"     Captcha Type: {plan.get('captcha_type', 'unknown')}")
-            print(f"     Solution: {plan.get('solution_value', 'N/A')}")
-            print(f"   💯 Confidence: {plan.get('confidence', 0)}")
-            print(f"     Expected: {plan.get('expected_outcome', 'N/A')}\n")
+            print(f"    Captcha Type: {plan.get('captcha_type', 'unknown')}")
+            print(f"    Solution: {plan.get('solution_value', 'N/A')}")
+            print(f"    Confidence: {plan.get('confidence', 0)}")
+            print(f"    Expected: {plan.get('expected_outcome', 'N/A')}\n")
             
             actions = plan.get('actions', [])
-            print(f"   🔧 Executing {len(actions)} action(s)...\n")
             
             for i, action in enumerate(actions, 1):
                 action_type = action.get('type')
@@ -738,8 +687,7 @@ NOW CREATE THE ACTION PLAN:"""
                         positions = action.get('positions', [])
                         grid_selector = action.get('grid_selector', '')
                         wait_between = action.get('wait_between', 0.3)
-                        
-                        # Try to find grid images
+
                         grid_element = self.find_element_flexible(grid_selector)
                         
                         if grid_element:
@@ -747,7 +695,6 @@ NOW CREATE THE ACTION PLAN:"""
                             
                             for pos in positions:
                                 row, col = pos
-                                # Calculate index (assuming 3x3 grid)
                                 index = (row - 1) * 3 + (col - 1)
                                 
                                 if index < len(images):
@@ -773,26 +720,201 @@ NOW CREATE THE ACTION PLAN:"""
                     
                     elif action_type == 'wait':
                         seconds = action.get('seconds', 1)
-                        print(f"        ⏳ Waiting {seconds}s...")
+                        print(f"         Waiting {seconds}s")
                         time.sleep(seconds)
                     
                     elif action_type == 'drag':
                         selector = action.get('selector')
                         offset_x = action.get('offset_x', 0)
                         offset_y = action.get('offset_y', 0)
-                        
-                        element = self.find_element_flexible(selector)
+
+                        element = None
+                        if selector:
+                            element = self.find_element_flexible(selector)
+
+                        if not element:
+                            fallback_selectors = [
+                                (By.CSS_SELECTOR, ".slider-button"),
+                                (By.CSS_SELECTOR, "[class*='slider-button']"),
+                                (By.CSS_SELECTOR, "[class*='slider-handle']"),
+                                (By.XPATH, "//div[contains(@class, 'slider-button')]"),
+                                (By.XPATH, "//div[contains(., '→')]"), 
+                                (By.XPATH, "//*[contains(text(), 'Slide to verify')]/preceding-sibling::div[1]"),
+                                (By.XPATH, "//*[contains(text(), 'Slide to verify')]/../div[contains(@class, 'button')]"),
+                                (By.CSS_SELECTOR, ".slider-track > div"),
+                                (By.XPATH, "//div[contains(@class, 'slider-track')]//div[contains(@class, 'button')]"),
+                            ]
+                            
+                            for by, sel in fallback_selectors:
+                                try:
+                                    element = self.driver.find_element(by, sel)
+                                    if element and element.is_displayed():
+                                        print(f"          Found slider via fallback: {sel}")
+                                        break
+                                except:
+                                    continue
                         
                         if element:
-                            # Use a separate variable name to avoid clobbering the actions list
-                            drag_actions = ActionChains(self.driver)
-                            drag_actions.click_and_hold(element)
-                            drag_actions.move_by_offset(offset_x, offset_y)
-                            drag_actions.release()
-                            drag_actions.perform()
-                            print(f"          Dragged element")
+                            try:
+                                self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                                time.sleep(0.3)
+                            except:
+                                pass
+
+                            location = element.location
+                            size = element.size
+                            start_x = location['x'] + size['width'] / 2
+                            start_y = location['y'] + size['height'] / 2
+                            
+                            print(f"          Found slider button at ({start_x:.0f}, {start_y:.0f}), size: {size['width']}x{size['height']}")
+
+                            steps = max(10, int(abs(offset_x) / 10)) 
+                            step_size_x = offset_x / steps if steps > 0 else 0
+                            step_size_y = offset_y / steps if steps > 0 else 0
+                            
+                            # Move to element first
+                            self.human_like_mouse_movement(
+                                random.randint(100, 500), 
+                                random.randint(100, 500),
+                                int(start_x), 
+                                int(start_y)
+                            )
+                            time.sleep(random.uniform(0.1, 0.3))
+                            try:
+                                self._record_click(int(start_x), int(start_y))
+
+                                script = f"""
+                                var element = arguments[0];
+                                var startX = arguments[1];
+                                var startY = arguments[2];
+                                var offsetX = arguments[3];
+                                var offsetY = arguments[4];
+                                var steps = arguments[5];
+                                
+                                function triggerMouseEvent(element, eventType, x, y) {{
+                                    var event = new MouseEvent(eventType, {{
+                                        view: window,
+                                        bubbles: true,
+                                        cancelable: true,
+                                        clientX: x,
+                                        clientY: y,
+                                        button: 0
+                                    }});
+                                    element.dispatchEvent(event);
+                                }}
+                                
+                                var rect = element.getBoundingClientRect();
+                                var centerX = rect.left + rect.width / 2;
+                                var centerY = rect.top + rect.height / 2;
+                                
+                                // Mouse down
+                                triggerMouseEvent(element, 'mousedown', centerX, centerY);
+                                
+                                return {{startX: centerX, startY: centerY}};
+                                """
+                                
+                                result = self.driver.execute_script(script, element, start_x, start_y, offset_x, offset_y, steps)
+                                js_start_x = result['startX']
+                                js_start_y = result['startY']
+                                
+                                time.sleep(random.uniform(0.1, 0.15))
+                                
+                                # Gradual drag movement using JavaScript
+                                current_x, current_y = 0, 0
+                                for step in range(steps):
+                                    step_offset_x = step_size_x + random.uniform(-0.5, 0.5)
+                                    step_offset_y = step_size_y + random.uniform(-0.3, 0.3)
+                                    current_x += step_offset_x
+                                    current_y += step_offset_y
+                                    
+                                    move_script = f"""
+                                    var element = arguments[0];
+                                    var x = arguments[1];
+                                    var y = arguments[2];
+                                    
+                                    function triggerMouseEvent(element, eventType, x, y) {{
+                                        var event = new MouseEvent(eventType, {{
+                                            view: window,
+                                            bubbles: true,
+                                            cancelable: true,
+                                            clientX: x,
+                                            clientY: y,
+                                            button: 0,
+                                            buttons: 1
+                                        }});
+                                        element.dispatchEvent(event);
+                                    }}
+                                    
+                                    triggerMouseEvent(element, 'mousemove', x, y);
+                                    """
+                                    
+                                    self.driver.execute_script(
+                                        move_script, 
+                                        element, 
+                                        js_start_x + current_x, 
+                                        js_start_y + current_y
+                                    )
+                                    
+                                    # Record mouse movement during drag
+                                    self._record_mouse_move(
+                                        int(start_x + current_x), 
+                                        int(start_y + current_y),
+                                        int(start_x + current_x - step_offset_x) if step > 0 else int(start_x),
+                                        int(start_y + current_y - step_offset_y) if step > 0 else int(start_y)
+                                    )
+                                    
+                                    # Variable delay for human-like behavior
+                                    time.sleep(random.uniform(0.01, 0.025))
+                                
+                                # Mouse up
+                                up_script = f"""
+                                var element = arguments[0];
+                                var x = arguments[1];
+                                var y = arguments[2];
+                                
+                                function triggerMouseEvent(element, eventType, x, y) {{
+                                    var event = new MouseEvent(eventType, {{
+                                        view: window,
+                                        bubbles: true,
+                                        cancelable: true,
+                                        clientX: x,
+                                        clientY: y,
+                                        button: 0
+                                    }});
+                                    element.dispatchEvent(event);
+                                }}
+                                
+                                triggerMouseEvent(element, 'mouseup', x, y);
+                                """
+                                
+                                self.driver.execute_script(
+                                    up_script, 
+                                    element, 
+                                    js_start_x + current_x, 
+                                    js_start_y + current_y
+                                )
+                                
+                                time.sleep(random.uniform(0.2, 0.4))
+                                
+                                print(f"          Dragged slider by {offset_x:.1f}px over {steps} steps")
+                            except Exception as e:
+                                print(f"          JavaScript drag error: {e}, trying ActionChains fallback")
+                                # Try ActionChains as fallback
+                                try:
+                                    actions = ActionChains(self.driver)
+                                    actions.click_and_hold(element)
+                                    actions.move_by_offset(int(offset_x), int(offset_y))
+                                    actions.release()
+                                    actions.perform()
+                                    print(f"          Used ActionChains drag fallback")
+                                    time.sleep(random.uniform(0.2, 0.4))
+                                except Exception as e2:
+                                    print(f"          ActionChains fallback also failed: {e2}")
+                                    import traceback
+                                    traceback.print_exc()
                         else:
-                            print(f"           Drag element not found: {selector}")
+                            print(f"          Drag element not found: {selector}")
+                            print(f"          Tried all fallback selectors but couldn't find slider button")
                     
                     # Wait after action if specified
                     wait_after = action.get('wait_after', 0)
@@ -815,10 +937,212 @@ NOW CREATE THE ACTION PLAN:"""
             traceback.print_exc()
             return False
     
+    def handle_login_page_if_present(self):
+        """
+        Use LLM vision to detect and handle login/entry form if present.
+        This is a generic approach that doesn't hardcode selectors.
+        """
+
+        time.sleep(random.uniform(1.5, 2.5))
+
+        screenshot = self.capture_screenshot()
+        page_html = self.get_page_html()
+
+        prompt = """Look at this webpage screenshot. Determine if there's a login form, entry form, or any button that says "Verify CAPTCHA", "Verify", or similar that needs to be clicked to proceed to the CAPTCHA challenge.
+
+If you see:
+1. A login/entry form (with email, username, password fields)
+2. A button to start/verify CAPTCHA
+3. Any other form that needs to be filled/submitted before accessing CAPTCHA
+
+Provide a JSON response with:
+{
+  "has_form": true/false,
+  "form_type": "login|entry|other",
+  "actions": [
+    {
+      "type": "input|click",
+      "selector": "CSS selector or XPath",
+      "selector_type": "css|xpath|id|name|class",
+      "value": "text to type (if input)",
+      "description": "what this action does"
+    }
+  ],
+  "verify_button": {
+    "selector": "CSS selector or XPath for verify/start button",
+    "selector_type": "css|xpath|text|id",
+    "button_text": "exact button text"
+  }
+}
+
+For selectors, prefer generic approaches:
+- Text-based: //button[contains(text(), 'Verify')]
+- Placeholder: input[placeholder*='name'], input[placeholder*='password']
+- Button text: button:contains('Verify CAPTCHA')
+- Generic inputs: input[type='text'], input[type='password']
+
+If no form is present, set "has_form": false and provide empty actions array."""
+
+        response_text = ""
+        try:
+            image_data = base64.b64decode(screenshot)
+            image = Image.open(BytesIO(image_data))
+            
+            response = self.model.generate_content([prompt, image])
+            response_text = response.text
+
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+            
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                response_text = json_match.group(0)
+            
+            form_data = json.loads(response_text)
+            
+            if not form_data.get('has_form', False):
+                print("  No login/entry form detected - proceeding directly to CAPTCHA\n")
+                return True
+            
+            print(f"  Login/entry form detected: {form_data.get('form_type', 'unknown')}")
+            actions = form_data.get('actions', [])
+            verify_button = form_data.get('verify_button', {})
+            
+            # Execute form filling actions
+            if actions:
+                for action in actions:
+                    action_type = action.get('type')
+                    selector = action.get('selector', '')
+                    selector_type = action.get('selector_type', 'css')
+                    value = action.get('value', '')
+                    description = action.get('description', '')
+                    
+                    print(f"    [{action_type.upper()}] {description}")
+                    
+                    try:
+                        element = self.find_element_flexible(selector, selector_type)
+                        
+                        if element:
+                            if action_type == 'input':
+                                element.clear()
+                                self.human_like_typing(element, str(value))
+                                print(f"      Filled: {value[:20]}...")
+                            elif action_type == 'click':
+                                self.human_like_click(element)
+                                print(f"      Clicked")
+                        else:
+                            print(f"      Element not found: {selector}")
+                    except Exception as e:
+                        print(f"      Error: {e}")
+
+            if verify_button:
+                btn_selector = verify_button.get('selector', '')
+                btn_selector_type = verify_button.get('selector_type', 'css')
+                btn_text = verify_button.get('button_text', 'Verify CAPTCHA')
+                
+                print(f"\n  Clicking verify button: {btn_text}")
+   
+                button_found = False
+                
+                # Strategy 1: Use provided selector
+                if btn_selector:
+                    try:
+                        element = self.find_element_flexible(btn_selector, btn_selector_type)
+                        if element:
+                            self.human_like_click(element)
+                            button_found = True
+                            print(f"    ✓ Clicked via selector: {btn_selector}")
+                    except Exception as e:
+                        print(f"    ✗ Selector failed: {e}")
+
+                if not button_found:
+                    try:
+                        xpath_selectors = [
+                            f"//button[contains(text(), '{btn_text}')]",
+                            f"//button[contains(., '{btn_text}')]",
+                            f"//*[contains(text(), '{btn_text}')]",
+                            f"//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{btn_text.lower()}')]"
+                        ]
+                        
+                        for xpath in xpath_selectors:
+                            try:
+                                element = self.driver.find_element(By.XPATH, xpath)
+                                if element:
+                                    self.human_like_click(element)
+                                    button_found = True
+                                    print(f"    Clicked via text search: {btn_text}")
+                                    break
+                            except:
+                                continue
+                    except Exception as e:
+                        print(f"    Text search failed: {e}")
+
+                if not button_found:
+                    try:
+                        generic_terms = ['verify', 'captcha', 'start', 'begin', 'next', 'continue']
+                        for term in generic_terms:
+                            try:
+                                xpath = f"//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{term}')]"
+                                element = self.driver.find_element(By.XPATH, xpath)
+                                if element and element.is_displayed():
+                                    self.human_like_click(element)
+                                    button_found = True
+                                    print(f"    Clicked generic button with '{term}'")
+                                    break
+                            except:
+                                continue
+                    except Exception as e:
+                        print(f"    Generic search failed: {e}")
+                
+                if not button_found:
+                    print(f"    Could not find verify button")
+                    return False
+                
+                time.sleep(random.uniform(2.0, 3.5))
+            
+            print(f"\n  Login form handled successfully\n")
+            return True
+            
+        except json.JSONDecodeError as e:
+            print(f"  Could not parse LLM response: {e}")
+            print(f"  Raw response: {response_text[:500]}")
+            return self._fallback_click_verify_button()
+        except Exception as e:
+            print(f"  Error handling login form: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._fallback_click_verify_button()
+    
+    def _fallback_click_verify_button(self):
+        print("  Attempting fallback: searching for verify button")
+        
+        fallback_selectors = [
+            (By.XPATH, "//button[contains(., 'Verify')]"),
+            (By.XPATH, "//button[contains(., 'CAPTCHA')]"),
+            (By.XPATH, "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'verify')]"),
+            (By.XPATH, "//*[@type='button' and contains(., 'Verify')]"),
+            (By.CSS_SELECTOR, "button"),
+        ]
+        
+        for by, selector in fallback_selectors:
+            try:
+                elements = self.driver.find_elements(by, selector)
+                for element in elements:
+                    if element.is_displayed() and 'verify' in element.text.lower():
+                        self.human_like_click(element)
+                        print(f"    ✓ Clicked fallback button")
+                        time.sleep(2)
+                        return True
+            except:
+                continue
+        
+        print("    Fallback failed - no verify button found")
+        return False
+    
     def solve_captcha_iteratively(self, max_layers=5, max_retries=3):
-        """
-        Iteratively solve CAPTCHA layers using Claude's vision with actual solutions
-        """
+
         print(f"  Starting CAPTCHA attack on: {self.target_url}")
         print(f"  Session ID: {self.session_id}\n")
         
@@ -835,40 +1159,29 @@ NOW CREATE THE ACTION PLAN:"""
             
             while retry_count < max_retries and not layer_solved:
                 if retry_count > 0:
-                    print(f"\n🔄 Retry {retry_count}/{max_retries}\n")
-                
-                # Capture screenshot and HTML
+                    print(f"\nRetry {retry_count}/{max_retries}\n")
                 screenshot = self.capture_screenshot()
                 page_html = self.get_page_html()
-                
-                # Analyze with Gemini
-                print("Asking Gemini to analyze and solve...\n")
+
                 analysis = self.analyze_captcha_with_gemini(
                     screenshot, 
                     page_html, 
                     previous_attempt_failed=(retry_count > 0)
                 )
-                print("="*60)
-                print("GEMINI'S ANALYSIS:")
-                print("="*60)
-                print(analysis)
+
                 print("="*60 + "\n")
                 
-                # Get action plan
-                print("Getting executable action plan...\n")
+                print("Getting executable action plan\n")
                 action_plan = self.get_action_plan_from_gemini(analysis, screenshot)
                 
                 # Execute actions
                 success = self.execute_actions(action_plan)
                 
                 if success:
-                    # Wait for result
                     time.sleep(2)
-                    
-                    # Take new screenshot to see if we progressed
+
                     new_screenshot = self.capture_screenshot()
-                    
-                    # Ask Gemini if we succeeded
+
                     verification_prompt = """Look at this new screenshot. Did we successfully solve the CAPTCHA or progress to a new challenge?
 
 Respond with JSON:
@@ -878,8 +1191,7 @@ Respond with JSON:
   "new_challenge": "description of new challenge if any",
   "message": "what you see now"
 }"""
-                    
-                    # Convert base64 to PIL Image
+
                     verify_image_data = base64.b64decode(new_screenshot)
                     verify_image = Image.open(BytesIO(verify_image_data))
                     
@@ -887,14 +1199,13 @@ Respond with JSON:
                         verification = self.model.generate_content([verification_prompt, verify_image])
                         verify_text = verification.text
                         print(f"\n  Verification:\n{verify_text}\n")
-                        
-                        # Try to parse verification
+
                         if "```json" in verify_text:
                             verify_text = verify_text.split("```json")[1].split("```")[0].strip()
                         verify_data = json.loads(verify_text)
                         
                         if verify_data.get('solved') or verify_data.get('progressed'):
-                            print("  Progress detected! Moving to next layer...\n")
+                            print("  Progress detected! Moving to next layer\n")
                             layer_solved = True
                             break
                     except Exception as e:
@@ -903,24 +1214,20 @@ Respond with JSON:
                 retry_count += 1
                 
                 if not layer_solved and retry_count < max_retries:
-                    print("   Attempt failed, trying again...\n")
+                    print("   Attempt failed, trying again\n")
                     time.sleep(1)
             
             if not layer_solved:
                 print(f"  Could not solve layer {layer} after {max_retries} attempts\n")
                 break
         
-        print(f"{'='*60}")
-        print("🏁 CAPTCHA SOLVING COMPLETE")
-        print(f"{'='*60}\n")
+        print(f"\n")
+        print("CAPTCHA SOLVING COMPLETE")
+        print(f"\n")
     
     def get_ml_prediction(self):
-        """
-        Send session data to ML core for prediction using ml_core.predict_slider
-        """
-        print("🔮 Sending session data to ML classifier...")
-        
-        # Convert session data to DataFrame
+        print("Sending session data to ML classifier...")
+
         df = pd.DataFrame(self.session_data)
         
         if len(df) == 0:
@@ -934,14 +1241,12 @@ Respond with JSON:
         print(f"   Avg velocity: {df['velocity'].mean():.2f}")
         print(f"   Max velocity: {df['velocity'].max():.2f}")
         print(f"   Avg acceleration: {df['acceleration'].mean():.2f}")
-        
-        # Call ml_core.predict_slider
+
         try:
             from ml_core import predict_slider, predict_human_prob
             
-            print(f"\n  Calling ml_core.predict_slider()...")
-            
-            # Prepare metadata (optional)
+            print(f"\n  Calling ml_core.predict_slider()")
+
             metadata = {
                 'session_id': self.session_id,
                 'target_url': self.target_url,
@@ -949,8 +1254,7 @@ Respond with JSON:
                 'duration': float(df['time_since_start'].max()),
                 'captcha_type': 'mixed'
             }
-            
-            # Call predict_slider with use_ensemble=True by default
+
             prob_human = predict_human_prob(df)
             decision = "human" if prob_human >= 0.5 else "bot"
             
@@ -960,8 +1264,7 @@ Respond with JSON:
                 'num_events': len(df),
                 'is_human': prob_human >= 0.5
             }
-            
-            # Format results
+
             prediction = {
                 'is_bot': bool(decision == 'bot'),
                 'classification': 'BOT' if decision == 'bot' else 'HUMAN',
@@ -1001,28 +1304,20 @@ Respond with JSON:
             if len(df) == 0:
                 print("   Empty DataFrame, skipping bot CSV append")
                 return
-            
-            # Ensure start_time is set (if events were recorded, it should be)
+
             if self.start_time is None:
-                # Fallback: approximate from first timestamp if available
                 try:
                     first_ts = df.iloc[0]['timestamp']
-                    # If timestamp is ISO string, we can't easily convert without extra deps;
-                    # just leave time_since_start as-is in that edge case.
                 except Exception:
                     pass
             else:
-                # Make time_since_start absolute (seconds since epoch), like existing bot data
                 df['time_since_start'] = self.start_time + df['time_since_start']
-                # Derive timestamp in milliseconds since epoch
                 df['timestamp'] = (df['time_since_start'] * 1000).astype(int)
-            
-            # Normalize labels to match bot_* training data
+
             df['user_type'] = 'bot'
             df['challenge_type'] = f"captcha1_{self.session_id}"
             df['captcha_id'] = 'captcha1'
-            
-            # Match column order used in existing bot_captcha*.csv
+
             column_order = [
                 'session_id', 'timestamp', 'time_since_start', 'time_since_last_event',
                 'event_type', 'client_x', 'client_y', 'relative_x', 'relative_y',
@@ -1031,49 +1326,38 @@ Respond with JSON:
                 'acceleration', 'direction', 'user_agent', 'screen_width', 'screen_height',
                 'viewport_width', 'viewport_height', 'user_type', 'challenge_type', 'captcha_id'
             ]
-            
-            # Only keep columns that exist
             df = df[[col for col in column_order if col in df.columns]]
-            
-            # Determine output file (only slider captcha supported here)
+
             output_file = DATA_DIR / f"bot_{captcha_id}.csv"
             file_exists = output_file.exists()
             
             df.to_csv(output_file, mode='a', header=not file_exists, index=False)
-            print(f"💾 Appended {len(df)} events to {output_file}")
+            print(f"Appended {len(df)} events to {output_file}")
         except Exception as e:
-            print(f"  Error appending session to bot CSV: {e}")
+            print(f"Error appending session to bot CSV: {e}")
             import traceback
             traceback.print_exc()
     
     def run_attack(self):
-        """
-        Main attack flow
-        """
         try:
-            # Setup driver
             self.setup_driver()
-            
-            # Navigate to target
-            print(f"  Navigating to {self.target_url}...")
+
+            print(f"  Navigating to {self.target_url}")
             self.driver.get(self.target_url)
-            
-            # Initial human-like behavior
+
             time.sleep(random.uniform(1.0, 2.0))
-            
-            # Random initial mouse movements
+
             for _ in range(3):
                 start_x, start_y = random.randint(100, 800), random.randint(100, 600)
                 end_x, end_y = random.randint(100, 800), random.randint(100, 600)
                 self.human_like_mouse_movement(start_x, start_y, end_x, end_y)
                 time.sleep(random.uniform(0.5, 1.0))
             
-            # Solve CAPTCHA
+            self.handle_login_page_if_present()
+
             self.solve_captcha_iteratively()
-            
-            # Get ML prediction
+
             prediction = self.get_ml_prediction()   
-            # Also append to global bot_captcha1.csv in data/ for training/analysis
             self._append_session_to_bot_csv(captcha_id="captcha1")
             
             return prediction
@@ -1110,30 +1394,28 @@ if __name__ == "__main__":
             print("Or set GEMINI_API_KEY environment variable or in .env file")
             sys.exit(1)
     
-    print("="*60)
+    print("\n")
     print("LLM-POWERED CAPTCHA ATTACKER (GEMINI)")
-    print("="*60)
+    print("\n")
     print(f"Target: {args.url}")
     print(f"ML Core: Using local ml_core.predict_slider()")
     print(f"LLM: Google Gemini ({args.model_name})")
-    print("="*60 + "\n")
-    
-    # Create attacker
+    print("\n")
+
     attacker = LLMCaptchaAttacker(
         gemini_api_key=args.gemini_api_key,
         target_url=args.url,
         model_name=args.model_name
     )
-    
-    # Run attack
+
     result = attacker.run_attack()
     
-    print("\n" + "="*60)
+    print("\n")
     print("ATTACK COMPLETE")
-    print("="*60)
+    print("\n")
     if result:
         print("  Classification Result:")
         print(json.dumps(result, indent=2))
     else:
         print("  No classification result available")
-    print("="*60)
+    print("-"*60)

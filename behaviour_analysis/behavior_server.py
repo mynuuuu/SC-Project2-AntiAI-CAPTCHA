@@ -330,25 +330,21 @@ def save_captcha_events():
                 }
                 
                 # Log classification result
-                print(f"\n{'='*60}")
+                print(f"\n")
                 print(f"CAPTCHA Behavior Classification")
-                print(f"{'='*60}")
+                print(f"{'-'*60}")
                 print(f"Session ID: {session_id}")
                 print(f"CAPTCHA ID: {captcha_id}")
                 print(f"Decision: {decision.upper()}")
                 print(f"Probability (Human): {confidence:.3f}")
                 print(f"Events: {len(events)}")
                 print(f"CAPTCHA Solved: {success}")
-                print(f"{'='*60}\n")
+                print(f"\n")
                 
             except Exception as e:
                 print(f"Warning: ML classification failed: {e}")
                 import traceback
                 traceback.print_exc()
-                # Continue with saving even if classification fails
-        
-        # Decide whether to save events for captcha1/2/3 based on classification
-        # For rotation/layer3, we always save as before.
         should_save_events = True
         if captcha_id in ['captcha1', 'captcha2', 'captcha3'] and classification_result is not None:
             # Only append to captcha1/2/3 CSV if classified as human
@@ -358,8 +354,6 @@ def save_captcha_events():
         if not os.path.exists(DATA_DIR):
             os.makedirs(DATA_DIR)
         
-        # Captcha-specific file path
-        # Map captcha IDs to CSV filenames
         file_mapping = {
             'rotation_layer': 'rotation_layer.csv',
             'rotation1': 'rotation1.csv',
@@ -405,8 +399,6 @@ def save_captcha_events():
         
         events_saved = 0
         if should_save_events and events:
-            # Always use append mode ('a') to preserve existing data
-            # This ensures data from previous sessions is never overwritten
             with open(csv_path, 'a', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, extrasaction='ignore')
                 
@@ -417,20 +409,17 @@ def save_captcha_events():
                         print(f"Added headers to empty file: {csv_path}")
                     else:
                         print(f"Created new CSV file with headers: {csv_path}")
-                
-                # Append events to CSV (this preserves all existing data)
+
                 for event in events:
-                    # Merge event data with metadata
                     row = {**event}
                     row['user_agent'] = metadata.get('user_agent', '')
                     row['screen_width'] = metadata.get('screen_width', '')
                     row['screen_height'] = metadata.get('screen_height', '')
                     row['viewport_width'] = metadata.get('viewport_width', '')
                     row['viewport_height'] = metadata.get('viewport_height', '')
-                    row['user_type'] = 'human'  # Default to human
+                    row['user_type'] = 'human'  
                     row['challenge_type'] = f"{captcha_id}_{'success' if success else 'failed'}"
                     row['captcha_id'] = captcha_id
-                    # Store full metadata as JSON string for rotation-specific features
                     row['metadata_json'] = json.dumps(metadata)
                     
                     writer.writerow(row)
@@ -438,7 +427,6 @@ def save_captcha_events():
             
             print(f"  Appended {events_saved} events to {csv_filename} (session: {session_id}, success: {success})")
         else:
-            # Skip saving if classified as bot for captcha1/2/3
             if captcha_id in ['captcha1', 'captcha2', 'captcha3'] and classification_result is not None:
                 print(f"    Skipping save for {captcha_id}: classified as BOT (session: {session_id})")
         
@@ -450,8 +438,7 @@ def save_captcha_events():
             'events_saved': events_saved,
             'file_path': csv_path
         }
-        
-        # Add classification result if available
+
         if classification_result:
             response['classification'] = classification_result
             response['message'] += f' | Classified as {classification_result["decision"]} (confidence: {classification_result["prob_human"]:.3f})'
@@ -476,15 +463,12 @@ def get_stats():
                 'message': 'No data collected yet'
             })
         
-        # Count total events
         with open(csv_path, 'r') as f:
             reader = csv.DictReader(f)
             events = list(reader)
             total_events = len(events)
             sessions = set(event['session_id'] for event in events)
             total_sessions = len(sessions)
-            
-            # Count by user type
             user_types = {}
             for event in events:
                 user_type = event.get('user_type', 'unknown')
@@ -512,8 +496,7 @@ def list_sessions():
         
         with open(summary_path, 'r') as f:
             summaries = json.load(f)
-        
-        # Return last 20 sessions
+
         recent_sessions = summaries[-20:]
         
         return jsonify({
@@ -564,17 +547,16 @@ def export_session(session_id):
 
 
 if __name__ == '__main__':
-    print("=" * 60)
+    print("\n")
     print(SERVICE_NAME)
-    print("=" * 60)
+    print("\n")
     print(f"Data directory: {DATA_DIR}")
     print(f"CSV file: {CSV_FILENAME}")
-    print("Initializing...")
     
     # Initialize data storage
     initialize_csv()
     
-    print("\nServer starting...")
+    print("\nServer starting")
     print(f"Access at: http://0.0.0.0:{PORT}")
     print("\nEndpoints:")
     print("  GET  /                    - Health check")
@@ -584,7 +566,7 @@ if __name__ == '__main__':
     print("  GET  /sessions            - List recent sessions")
     print("  GET  /export/<session_id> - Export session data")
     print("\nPress Ctrl+C to stop")
-    print("=" * 60)
+    print("\n" * 60)
     
     # Run server
     # Use host='0.0.0.0' to allow access from other devices (like your Pi or Render dynos)

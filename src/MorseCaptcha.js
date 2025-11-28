@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { evaluateFinalAccess } from "./finalHumanGate";
+import "./MorseCaptcha.css";
 
 const DOT_TIME = 500;
 const DASH_TIME = 1200;
@@ -126,76 +127,79 @@ export default function MorseCaptcha() {
     };
 
     return (
-        <div style={{ textAlign: "center", marginTop: "40px" }}>
-            <h2>Morse Pattern CAPTCHA</h2>
+        <div className="morse-captcha-container">
+            <h2 className="morse-captcha-title">Captcha 4</h2>
 
             {/*   INTRO SCREEN */}
             {stage === "intro" && (
-                <>
-                    <p style={{ maxWidth: 380, margin: "10px auto" }}>
-                        This is a simple human check.
-                        <br /><br />
-                        You will watch a box flash 3–5 times.
-                        <br />Short flash = DOT (•)
-                        <br />Long flash = DASH (—)
-                        <br /><br />
-                        Then you'll repeat the same pattern:
-                        <br /><b>Click</b> for DOT (•)
-                        <br /><b>Press & Hold</b> for DASH (—)
-                        <br /><br />
-                        Click START when you're ready.
-                    </p>
+                <div className="morse-captcha-stage-container">
+                    <div className="morse-captcha-intro">
+                        <p>This is a simple human check.</p>
+                        <p>
+                            You will watch a box flash 3–5 times.<br />
+                            Short flash = DOT (•)<br />
+                            Long flash = DASH (—)
+                        </p>
+                        <p>
+                            Then you'll repeat the same pattern:<br />
+                            <b>Click</b> for DOT (•)<br />
+                            <b>Press & Hold</b> for DASH (—)
+                        </p>
+                        <p>Click START when you're ready.</p>
+                    </div>
 
                     <button
-                        style={{ padding: "18px 40px", fontSize: "18px", cursor: "pointer" }}
+                        className="morse-captcha-button morse-captcha-button-start"
                         onClick={handleStart}
                     >
                         START
                     </button>
-                </>
+                </div>
             )}
 
             {/*   COUNTDOWN SCREEN */}
-            {(stage === "countdown" || stage === "watch") && (
-                <div style={{ fontSize: "48px", fontWeight: "bold", margin: "40px" }}>
-                    {countdown}
+            {stage === "countdown" && (
+                <div className="morse-captcha-stage-container">
+                    <div className="morse-captcha-countdown">{countdown}</div>
+                    <div
+                        className="morse-captcha-flash-box"
+                        style={{
+                            background: "#222"
+                        }}
+                    />
                 </div>
             )}
 
             {/*   FLASH DISPLAY */}
-            {(stage === "watch" || stage === "repeat" || stage === "result" || stage === "countdown") && (
+            {(stage === "watch" || stage === "repeat" || stage === "result") && (
                 <div
+                    className="morse-captcha-flash-box"
                     style={{
-                        width: 130,
-                        height: 130,
-                        margin: "20px auto",
-                        background: flashOn ? flashColor : "#222",
-                        transition: "background 0.2s",
-                        borderRadius: 10,
+                        background: flashOn ? flashColor : "#222"
                     }}
                 />
             )}
 
             {/*   WATCHING INSTRUCTIONS */}
             {stage === "watch" && (
-                <p>
-                    Step 1: Watch carefully...
-                    <br />Short flash = DOT (•)
-                    <br />Long flash = DASH (—)
-                </p>
+                <div className="morse-captcha-stage-container">
+                    <div className="morse-captcha-instructions">
+                        <p><strong>Step 1: Watch carefully...</strong></p>
+                        <p>Short flash = DOT (•)<br />Long flash = DASH (—)</p>
+                    </div>
+                </div>
             )}
 
             {/*   REPEAT STAGE */}
             {stage === "repeat" && (
-                <>
-                    <p>
-                        Step 2: Repeat the pattern
-                        <br /><b>Click</b> = DOT (•)
-                        <br /><b>Hold</b> = DASH (—)
-                    </p>
+                <div className="morse-captcha-stage-container">
+                    <div className="morse-captcha-instructions">
+                        <p><strong>Step 2: Repeat the pattern</strong></p>
+                        <p><b>Click</b> = DOT (•)<br /><b>Hold</b> = DASH (—)</p>
+                    </div>
 
                     <button
-                        style={{ padding: "18px 40px", fontSize: "18px" }}
+                        className="morse-captcha-button morse-captcha-button-click-hold"
                         onMouseDown={handlePressStart}
                         onMouseUp={handlePressEnd}
                         onTouchStart={handlePressStart}
@@ -204,20 +208,38 @@ export default function MorseCaptcha() {
                         Click / Hold
                     </button>
 
-                    <p style={{ marginTop: 15 }}>
-                        Your Input: {userInput || ""}
-                    </p>
+                    <div className="morse-captcha-user-input">
+                        {userInput || "..."}
+                    </div>
 
-                    <button onClick={clearInput}>Clear</button>
-                </>
+                    <button 
+                        className="morse-captcha-button morse-captcha-button-secondary"
+                        onClick={clearInput}
+                    >
+                        Clear
+                    </button>
+                </div>
             )}
 
             {/*   RESULT */}
             {stage === "result" && (
-                <>
-                    <p style={{ fontSize: "20px" }}>{result}</p>
-                    <button onClick={reset}>New Pattern</button>
-                </>
+                <div className="morse-captcha-stage-container">
+                    <p className={`morse-captcha-message ${
+                        result && result.includes("Incorrect")
+                            ? "morse-captcha-message-error"
+                            : result && (result.includes("Correct") || result.includes("correct"))
+                            ? "morse-captcha-message-success"
+                            : "morse-captcha-message-error"
+                    }`}>
+                        {result}
+                    </p>
+                    <button 
+                        className="morse-captcha-button"
+                        onClick={reset}
+                    >
+                        New Pattern
+                    </button>
+                </div>
             )}
         </div>
     );

@@ -276,14 +276,13 @@ const CustomSliderCaptcha = ({ imageUrl, onVerify, onReset, captchaId }) => {
           // Display ML classification results
           if (result.classification) {
             const classification = result.classification;
-            console.log(`\n${'='.repeat(60)}`);
+            console.log(`\n`);
             console.log(`ML CLASSIFICATION RESULTS`);
-            console.log(`${'='.repeat(60)}`);
             console.log(`Decision: ${classification.decision.toUpperCase()}`);
             console.log(`Probability (Human): ${classification.prob_human.toFixed(3)}`);
             console.log(`Total Events: ${classification.num_events}`);
             console.log(`Is Human: ${classification.is_human ? '  YES' : '  NO'}`);
-            console.log(`${'='.repeat(60)}\n`);
+            console.log(`\n`);
 
             // Store classification result for final gate (Morse captcha)
             // This will be used to decide if user can proceed after Morse
