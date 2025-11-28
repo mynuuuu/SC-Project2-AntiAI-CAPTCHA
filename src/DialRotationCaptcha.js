@@ -451,7 +451,7 @@ function DialRotationCaptcha({ onSuccess }) {
       </div>
 
       {message && (
-        <p className={`dial-captcha-message ${message.includes(' ')
+        <p className={`dial-captcha-message ${message.includes('Solved')
           ? 'dial-captcha-message-success'
           : 'dial-captcha-message-error'
           }`}>

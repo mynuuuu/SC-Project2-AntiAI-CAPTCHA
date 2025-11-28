@@ -208,7 +208,7 @@ function AnimalRotationCaptcha({ onSuccess }) {
         <p
           className={
             'rotation-captcha-message ' +
-            (message.includes(' ')
+            (message.includes('Passed')
               ? 'rotation-captcha-message-success'
               : 'rotation-captcha-message-error')
           }
