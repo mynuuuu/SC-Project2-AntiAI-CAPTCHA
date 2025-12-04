@@ -1,3 +1,4 @@
+// #Author: Naman Taneja
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CustomSliderCaptcha from './CustomSliderCaptcha';

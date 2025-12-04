@@ -1,3 +1,4 @@
+// #Author: Naman Taneja
 import React, { useState, useEffect, useRef } from "react";
 import { evaluateFinalAccess } from "./finalHumanGate";
 import "./MorseCaptcha.css";

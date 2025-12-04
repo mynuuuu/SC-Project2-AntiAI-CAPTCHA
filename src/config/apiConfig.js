@@ -1,3 +1,4 @@
+// #Author: Naman Taneja
 /**
  * Centralized config for the behavior tracking backend.
  * Allows switching between dev (localhost) and prod (Render) via env vars.

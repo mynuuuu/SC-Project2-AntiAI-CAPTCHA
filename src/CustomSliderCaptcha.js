@@ -1,3 +1,4 @@
+// #Author: Naman Taneja
 import { useState, useRef, useEffect } from 'react';
 import './CustomSliderCaptcha.css';
 import useBehaviorTracking from './useBehaviorTracking';

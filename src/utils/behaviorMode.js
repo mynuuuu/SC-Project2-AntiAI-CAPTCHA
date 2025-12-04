@@ -1,3 +1,4 @@
+// #Author: Naman Taneja
 const ATTACK_FLAG_KEY = 'attackModeActive';
 
 const hasBrowserContext = () => typeof window !== 'undefined';

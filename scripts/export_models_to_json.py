@@ -1,10 +1,12 @@
+# Code to export models to JSON
+# Author: Naman Taneja
+
 import joblib
 import json
 import numpy as np
 from pathlib import Path
 from sklearn.tree import _tree
 
-# Paths
 BASE = Path(__file__).resolve().parent.parent
 MODELS_DIR = BASE / "models"
 OUTPUT_FILE = MODELS_DIR / "slider_classifier_portable.json"
@@ -24,7 +26,6 @@ def tree_to_dict(tree, feature_names=None):
     
     def recurse(node):
         if tree_.feature[node] != _tree.TREE_UNDEFINED:
-            # Internal node
             name = feature_names_[node]
             threshold = tree_.threshold[node]
             return {
@@ -35,10 +36,7 @@ def tree_to_dict(tree, feature_names=None):
                 "right": recurse(tree_.children_right[node])
             }
         else:
-            # Leaf node
-            # For classifier, value is class counts/probabilities
             value = tree_.value[node][0]
-            # Normalize to probabilities
             probs = (value / value.sum()).tolist()
             return {
                 "type": "leaf",
@@ -62,24 +60,13 @@ def export_random_forest(model):
 
 def export_gradient_boosting(model):
     """Export Gradient Boosting model to dict"""
-    # GB stores trees in an array of shape (n_estimators, n_classes)
-    # For binary classification, n_classes=1 (regression on log-odds)
     trees = []
     for i, estimator_array in enumerate(model.estimators_):
-        # Flattened list of trees
         for estimator in estimator_array:
-            # GB trees are regressors, so leaf values are raw scores
-            # We use a slightly different recursive function for regressors if needed,
-            # but the structure is the same. Leaf value is just a single float.
-            
             tree_dict = tree_to_dict(estimator)
             
-            # Fix leaf values for regression trees (they come as [[value]])
             def fix_leaves(node):
                 if node["type"] == "leaf":
-                    # Extract single float value
-                    # tree_.value[node] is [[val]]
-                    # In our dict it's [val] (list of 1)
                     node["value"] = node["value"][0]
                 else:
                     fix_leaves(node["left"])
@@ -124,7 +111,7 @@ def main():
         
         print(f"Saving to {OUTPUT_FILE}...")
         with open(OUTPUT_FILE, 'w') as f:
-            json.dump(portable_model, f) # No indent to save space
+            json.dump(portable_model, f)
             
         print(f"Done! File size: {OUTPUT_FILE.stat().st_size / 1024 / 1024:.2f} MB")
         

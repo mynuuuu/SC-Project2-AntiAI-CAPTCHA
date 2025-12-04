@@ -1,3 +1,4 @@
+// #Author: Naman Taneja
 import React, { useRef, useState } from 'react';
 import './AnimalRotationCaptcha.css';
 import useBehaviorTracking from './useBehaviorTracking';

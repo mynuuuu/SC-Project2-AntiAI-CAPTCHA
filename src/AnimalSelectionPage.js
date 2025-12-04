@@ -1,3 +1,4 @@
+// #Author: Naman Taneja
 import React, { useRef, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { animalImages } from './AnimalRotationPage';
