@@ -1,3 +1,4 @@
+# #Author: Swetha Sekar
 import google.generativeai as genai
 from selenium import webdriver
 from selenium.webdriver.common.by import By

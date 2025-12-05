@@ -1,3 +1,4 @@
+#Author: Swetha Sekar
 import csv
 import requests
 import json
@@ -8,7 +9,7 @@ SERVER_URL = 'http://127.0.0.1:8000'
 CLASSIFY_ENDPOINT = f'{SERVER_URL}/classify_session'
 
 def classify_csv(file_path, captcha_id):
-    print(f'Reading {file_path}...')
+    print(f'Reading {file_path}')
     sessions = defaultdict(list)
     headers = []
     try:
