@@ -1,57 +1,35 @@
-# ml_core.py
-"""
-Slider CAPTCHA ML Prediction System
-Uses supervised classification models to predict human vs bot behavior
-Trained using train_slider_classifier.py
-"""
-
 import pandas as pd
 import numpy as np
 import json
 import joblib
 from pathlib import Path
 from typing import Dict, Optional, Tuple
-
-# Models are in the root models/ folder
 BASE = Path(__file__).resolve().parent.parent
-MODELS_DIR = BASE / "models"
-
-# Load models (lazy loading - only load when needed)
+MODELS_DIR = BASE / 'models'
 _models_cache = {}
 
 def _load_ensemble_model():
-    """Load ensemble model (cached)"""
     if 'ensemble' in _models_cache:
         return _models_cache['ensemble']
-    
-    model_path = MODELS_DIR / "slider_classifier_ensemble.pkl"
+    model_path = MODELS_DIR / 'slider_classifier_ensemble.pkl'
     if not model_path.exists():
-        raise FileNotFoundError(f"Ensemble model not found: {model_path}")
-    
+        raise FileNotFoundError(f'Ensemble model not found: {model_path}')
     model = joblib.load(model_path)
     _models_cache['ensemble'] = model
     return model
 
 def _load_scaler():
-    """Load scaler (cached)"""
     if 'scaler' in _models_cache:
         return _models_cache['scaler']
-    
-    scaler_path = MODELS_DIR / "slider_classifier_scaler.pkl"
+    scaler_path = MODELS_DIR / 'slider_classifier_scaler.pkl'
     if not scaler_path.exists():
-        raise FileNotFoundError(f"Scaler not found: {scaler_path}")
-    
+        raise FileNotFoundError(f'Scaler not found: {scaler_path}')
     scaler = joblib.load(scaler_path)
     _models_cache['scaler'] = scaler
     return scaler
 
-def _extract_slider_features_base(df_session: pd.DataFrame, metadata: Optional[Dict] = None) -> Tuple[np.ndarray, Dict]:
-    """
-    Internal function to extract features and return both vector and dictionary
-    """
+def _extract_slider_features_base(df_session: pd.DataFrame, metadata: Optional[Dict]=None) -> Tuple[np.ndarray, Dict]:
     g = df_session.sort_values('time_since_start') if 'time_since_start' in df_session.columns else df_session
-    
-    # Event-level features - convert to numeric first
     if 'velocity' in g.columns:
         velocities = pd.to_numeric(g['velocity'], errors='coerce').fillna(0).values
     else:
@@ -59,7 +37,6 @@ def _extract_slider_features_base(df_session: pd.DataFrame, metadata: Optional[D
     vel_mean = float(velocities.mean()) if len(velocities) > 0 else 0.0
     vel_std = float(velocities.std()) if len(velocities) > 0 else 0.0
     vel_max = float(velocities.max()) if len(velocities) > 0 else 0.0
-    
     if 'time_since_last_event' in g.columns:
         tsls = pd.to_numeric(g['time_since_last_event'], errors='coerce').fillna(0).values
     else:
@@ -67,7 +44,6 @@ def _extract_slider_features_base(df_session: pd.DataFrame, metadata: Optional[D
     ts_mean = float(tsls.mean()) if len(tsls) > 0 else 0.0
     ts_std = float(tsls.std()) if len(tsls) > 0 else 0.0
     idle_200 = float((tsls > 200).mean()) if len(tsls) > 0 else 0.0
-    
     if 'client_x' in g.columns:
         xs = pd.to_numeric(g['client_x'], errors='coerce').ffill().fillna(0).values
     else:
@@ -76,23 +52,18 @@ def _extract_slider_features_base(df_session: pd.DataFrame, metadata: Optional[D
         ys = pd.to_numeric(g['client_y'], errors='coerce').ffill().fillna(0).values
     else:
         ys = np.array([0.0])
-    
     if len(xs) > 1:
         dx = np.diff(xs)
         dy = np.diff(ys)
-        dist = np.sqrt(dx**2 + dy**2)
+        dist = np.sqrt(dx ** 2 + dy ** 2)
         path_length = float(dist.sum())
         dirs = np.arctan2(dy, dx)
         dir_changes = int(np.sum(np.abs(np.diff(dirs)) > 0.3))
     else:
         path_length = 0.0
         dir_changes = 0
-    
     n_events = int(len(g))
-    
-    # Parse metadata if provided
     if metadata is None:
-        # Try to get from first row
         if 'metadata_json' in g.columns and pd.notna(g.iloc[0].get('metadata_json', None)):
             try:
                 metadata = json.loads(g.iloc[0]['metadata_json'])
@@ -100,33 +71,7 @@ def _extract_slider_features_base(df_session: pd.DataFrame, metadata: Optional[D
                 metadata = {}
         else:
             metadata = {}
-    
-    # Combine event-level and metadata features
-    features = {
-        'vel_mean': vel_mean,
-        'vel_std': vel_std,
-        'vel_max': vel_max,
-        'ts_mean': ts_mean,
-        'ts_std': ts_std,
-        'idle_200': idle_200,
-        'path_length': path_length,
-        'dir_changes': dir_changes,
-        'n_events': n_events,
-        'target_position_px': metadata.get('target_position_px', 0.0),
-        'final_slider_position_px': metadata.get('final_slider_position_px', 0.0),
-        'success': 1 if metadata.get('success', False) else 0,
-        'drag_count': metadata.get('drag_count', 0),
-        'total_travel_px': metadata.get('total_travel_px', 0.0),
-        'direction_changes_metadata': metadata.get('direction_changes', 0),
-        'max_speed_px_per_sec': metadata.get('max_speed_px_per_sec', 0.0),
-        'interaction_duration_ms': metadata.get('interaction_duration_ms', 0.0),
-        'idle_before_first_drag_ms': metadata.get('idle_before_first_drag_ms', 0.0),
-        'used_mouse': 1 if metadata.get('used_mouse', False) else 0,
-        'used_touch': 1 if metadata.get('used_touch', False) else 0,
-        'behavior_event_count': metadata.get('behavior_event_count', n_events),
-    }
-    
-    # Behavior stats
+    features = {'vel_mean': vel_mean, 'vel_std': vel_std, 'vel_max': vel_max, 'ts_mean': ts_mean, 'ts_std': ts_std, 'idle_200': idle_200, 'path_length': path_length, 'dir_changes': dir_changes, 'n_events': n_events, 'target_position_px': metadata.get('target_position_px', 0.0), 'final_slider_position_px': metadata.get('final_slider_position_px', 0.0), 'success': 1 if metadata.get('success', False) else 0, 'drag_count': metadata.get('drag_count', 0), 'total_travel_px': metadata.get('total_travel_px', 0.0), 'direction_changes_metadata': metadata.get('direction_changes', 0), 'max_speed_px_per_sec': metadata.get('max_speed_px_per_sec', 0.0), 'interaction_duration_ms': metadata.get('interaction_duration_ms', 0.0), 'idle_before_first_drag_ms': metadata.get('idle_before_first_drag_ms', 0.0), 'used_mouse': 1 if metadata.get('used_mouse', False) else 0, 'used_touch': 1 if metadata.get('used_touch', False) else 0, 'behavior_event_count': metadata.get('behavior_event_count', n_events)}
     behavior_stats = metadata.get('behavior_stats', {})
     if isinstance(behavior_stats, dict):
         features['behavior_moves'] = behavior_stats.get('moves', 0)
@@ -141,20 +86,16 @@ def _extract_slider_features_base(df_session: pd.DataFrame, metadata: Optional[D
         features['behavior_clicks'] = 0
         features['behavior_drags'] = 0
         features['behavior_duration'] = 0.0
-    
-    # Slider trace analysis
     slider_trace = metadata.get('slider_trace', [])
     if slider_trace and len(slider_trace) > 1:
         trace_df = pd.DataFrame(slider_trace)
         positions = trace_df['position'].values
         times = trace_df['t'].values
-        
         if len(positions) > 1:
             position_deltas = np.diff(positions)
             time_deltas = np.diff(times)
             time_deltas = np.where(time_deltas == 0, 0.001, time_deltas)
             position_velocities = position_deltas / time_deltas
-            
             features['trace_avg_velocity'] = float(np.mean(np.abs(position_velocities)))
             features['trace_std_velocity'] = float(np.std(position_velocities))
             features['trace_max_velocity'] = float(np.max(np.abs(position_velocities)))
@@ -175,253 +116,123 @@ def _extract_slider_features_base(df_session: pd.DataFrame, metadata: Optional[D
         features['trace_smoothness'] = 0.0
         features['trace_position_range'] = 0.0
         features['trace_length'] = 0
-    
-    # Derived features
     if features['interaction_duration_ms'] > 0:
         features['avg_travel_per_ms'] = features['total_travel_px'] / features['interaction_duration_ms']
     else:
         features['avg_travel_per_ms'] = 0.0
-    
     if features['drag_count'] > 0:
         features['avg_travel_per_drag'] = features['total_travel_px'] / features['drag_count']
     else:
         features['avg_travel_per_drag'] = 0.0
-    
     if features['target_position_px'] > 0:
         features['position_accuracy'] = 1.0 - abs(features['final_slider_position_px'] - features['target_position_px']) / features['target_position_px']
     else:
         features['position_accuracy'] = 0.0
-    
-    # Define feature order (must match training)
-    # This order is determined by the order features are added to the dict above
-    feature_order = [
-        'vel_mean', 'vel_std', 'vel_max',
-        'ts_mean', 'ts_std', 'idle_200',
-        'path_length', 'dir_changes', 'n_events',
-        'target_position_px', 'final_slider_position_px', 'success',
-        'drag_count', 'total_travel_px', 'direction_changes_metadata',
-        'max_speed_px_per_sec', 'interaction_duration_ms', 'idle_before_first_drag_ms',
-        'used_mouse', 'used_touch', 'behavior_event_count',
-        'behavior_moves', 'behavior_clicks', 'behavior_drags', 'behavior_duration',
-        'trace_avg_velocity', 'trace_std_velocity', 'trace_max_velocity',
-        'trace_smoothness', 'trace_position_range', 'trace_length',
-        'avg_travel_per_ms', 'avg_travel_per_drag', 'position_accuracy'
-    ]
-    
-    # Create feature vector in the correct order
+    feature_order = ['vel_mean', 'vel_std', 'vel_max', 'ts_mean', 'ts_std', 'idle_200', 'path_length', 'dir_changes', 'n_events', 'target_position_px', 'final_slider_position_px', 'success', 'drag_count', 'total_travel_px', 'direction_changes_metadata', 'max_speed_px_per_sec', 'interaction_duration_ms', 'idle_before_first_drag_ms', 'used_mouse', 'used_touch', 'behavior_event_count', 'behavior_moves', 'behavior_clicks', 'behavior_drags', 'behavior_duration', 'trace_avg_velocity', 'trace_std_velocity', 'trace_max_velocity', 'trace_smoothness', 'trace_position_range', 'trace_length', 'avg_travel_per_ms', 'avg_travel_per_drag', 'position_accuracy']
     feat_vec = np.array([features.get(name, 0.0) for name in feature_order], dtype=float)
-    
-    return feat_vec, features
+    return (feat_vec, features)
 
-def extract_slider_features(df_session: pd.DataFrame, metadata: Optional[Dict] = None) -> np.ndarray:
-    """
-    Extract slider-specific features from session events and metadata
-    Returns feature vector matching training script
-    """
-    feat_vec, _ = _extract_slider_features_base(df_session, metadata)
+def extract_slider_features(df_session: pd.DataFrame, metadata: Optional[Dict]=None) -> np.ndarray:
+    (feat_vec, _) = _extract_slider_features_base(df_session, metadata)
     return feat_vec
 
 def _load_portable_model():
-    """Load portable JSON model (cached)"""
     if 'portable' in _models_cache:
         return _models_cache['portable']
-    
-    model_path = MODELS_DIR / "slider_classifier_portable.json"
+    model_path = MODELS_DIR / 'slider_classifier_portable.json'
     if not model_path.exists():
-        raise FileNotFoundError(f"Portable model not found: {model_path}")
-    
+        raise FileNotFoundError(f'Portable model not found: {model_path}')
     with open(model_path, 'r') as f:
         model = json.load(f)
-        
     _models_cache['portable'] = model
     return model
 
 def _predict_tree(tree_node, features):
-    """Recursively predict using a single tree dict"""
-    if tree_node["type"] == "leaf":
-        return tree_node["value"]
-    
-    feature_val = features[tree_node["feature_index"]]
-    if feature_val <= tree_node["threshold"]:
-        return _predict_tree(tree_node["left"], features)
+    if tree_node['type'] == 'leaf':
+        return tree_node['value']
+    feature_val = features[tree_node['feature_index']]
+    if feature_val <= tree_node['threshold']:
+        return _predict_tree(tree_node['left'], features)
     else:
-        return _predict_tree(tree_node["right"], features)
+        return _predict_tree(tree_node['right'], features)
 
 def _predict_random_forest_portable(rf_model, features):
-    """Predict using portable Random Forest"""
-    # Sum of probabilities from all trees
     total_prob = 0.0
-    for tree in rf_model["trees"]:
-        # Leaf value is [prob_class_0, prob_class_1]
+    for tree in rf_model['trees']:
         probs = _predict_tree(tree, features)
-        total_prob += probs[1] # Probability of class 1 (human)
-        
-    return total_prob / rf_model["n_estimators"]
+        total_prob += probs[1]
+    return total_prob / rf_model['n_estimators']
 
 def _predict_gradient_boosting_portable(gb_model, features):
-    """Predict using portable Gradient Boosting"""
-    # Start with initial score
-    score = gb_model["init_score"]
-    lr = gb_model["learning_rate"]
-    
-    for tree in gb_model["trees"]:
-        # Leaf value is raw score
+    score = gb_model['init_score']
+    lr = gb_model['learning_rate']
+    for tree in gb_model['trees']:
         leaf_val = _predict_tree(tree, features)
         score += lr * leaf_val
-        
-    # Sigmoid function to convert log-odds to probability
     prob = 1.0 / (1.0 + np.exp(-score))
     return prob
 
-def predict_portable(df_session: pd.DataFrame, metadata: Optional[Dict] = None) -> Tuple[bool, float, Dict]:
-    """
-    Predict using portable JSON models (Pure Python/Numpy only)
-    """
-    # Extract features
-    feat_vec, _ = _extract_slider_features_base(df_session, metadata)
-    
-    # Load model
+def predict_portable(df_session: pd.DataFrame, metadata: Optional[Dict]=None) -> Tuple[bool, float, Dict]:
+    (feat_vec, _) = _extract_slider_features_base(df_session, metadata)
     model = _load_portable_model()
-    scaler = model["scaler"]
-    
-    # Scale features manually
-    # (x - mean) / scale
-    mean = np.array(scaler["mean"])
-    scale = np.array(scaler["scale"])
-    
-    # Handle feature count mismatch
+    scaler = model['scaler']
+    mean = np.array(scaler['mean'])
+    scale = np.array(scaler['scale'])
     if len(feat_vec) < len(mean):
         padding = np.zeros(len(mean) - len(feat_vec))
         feat_vec = np.concatenate([feat_vec, padding])
     elif len(feat_vec) > len(mean):
         feat_vec = feat_vec[:len(mean)]
-        
     features_scaled = (feat_vec - mean) / scale
-    
-    # Random Forest Prediction
-    rf_prob = _predict_random_forest_portable(model["random_forest"], features_scaled)
-    
-    # Gradient Boosting Prediction
-    gb_prob = _predict_gradient_boosting_portable(model["gradient_boosting"], features_scaled)
-    
-    # Ensemble
+    rf_prob = _predict_random_forest_portable(model['random_forest'], features_scaled)
+    gb_prob = _predict_gradient_boosting_portable(model['gradient_boosting'], features_scaled)
     prob_human = (rf_prob + gb_prob) / 2.0
     is_human = prob_human > 0.7
-    
-    return is_human, float(prob_human), {
-        "model_type": "portable_ensemble",
-        "random_forest_prob": float(rf_prob),
-        "gradient_boosting_prob": float(gb_prob),
-        "ensemble_prob": float(prob_human),
-        "prediction": "human" if is_human else "bot"
-    }
+    return (is_human, float(prob_human), {'model_type': 'portable_ensemble', 'random_forest_prob': float(rf_prob), 'gradient_boosting_prob': float(gb_prob), 'ensemble_prob': float(prob_human), 'prediction': 'human' if is_human else 'bot'})
 
-def predict_slider(df_session: pd.DataFrame, metadata: Optional[Dict] = None, use_ensemble: bool = True) -> Tuple[bool, float, Dict]:
-    """
-    Predict if session is human or bot using slider classifier models
-    Falls back to portable model if sklearn fails, then heuristic
-    """
-    # Extract features
-    feat_vec, features_dict = _extract_slider_features_base(df_session, metadata)
-    
+def predict_slider(df_session: pd.DataFrame, metadata: Optional[Dict]=None, use_ensemble: bool=True) -> Tuple[bool, float, Dict]:
+    (feat_vec, features_dict) = _extract_slider_features_base(df_session, metadata)
     try:
-        # Try to load sklearn models
         scaler = _load_scaler()
-        
-        # ... (sklearn logic omitted for brevity, it's the same as before)
-        # Check if feature count matches - pad or truncate if needed
         expected_features = scaler.n_features_in_
         actual_features = len(feat_vec)
-        
         if actual_features != expected_features:
             if actual_features < expected_features:
                 padding = np.zeros(expected_features - actual_features)
                 feat_vec = np.concatenate([feat_vec, padding])
             else:
                 feat_vec = feat_vec[:expected_features]
-        
-        # Scale features
         features_scaled = scaler.transform(feat_vec.reshape(1, -1))
-        
         if use_ensemble:
             ensemble_model = _load_ensemble_model()
             rf_model = ensemble_model.get('random_forest')
             gb_model = ensemble_model.get('gradient_boosting')
-            
             if rf_model is None or gb_model is None:
-                raise ValueError("Ensemble model missing required models")
-            
+                raise ValueError('Ensemble model missing required models')
             rf_proba = rf_model.predict_proba(features_scaled)[0, 1]
             gb_proba = gb_model.predict_proba(features_scaled)[0, 1]
             prob_human = (rf_proba + gb_proba) / 2.0
             is_human = prob_human > 0.7
-            
-            details = {
-                'model_type': 'ensemble',
-                'random_forest_prob': float(rf_proba),
-                'gradient_boosting_prob': float(gb_proba),
-                'ensemble_prob': float(prob_human),
-                'prediction': 'human' if is_human else 'bot',
-            }
+            details = {'model_type': 'ensemble', 'random_forest_prob': float(rf_proba), 'gradient_boosting_prob': float(gb_proba), 'ensemble_prob': float(prob_human), 'prediction': 'human' if is_human else 'bot'}
         else:
-             # Use only Random Forest
             ensemble_model = _load_ensemble_model()
             rf_model = ensemble_model.get('random_forest')
-            
             if rf_model is None:
-                raise ValueError("Random Forest model not found in ensemble")
-            
+                raise ValueError('Random Forest model not found in ensemble')
             prob_human = rf_model.predict_proba(features_scaled)[0, 1]
             is_human = prob_human > 0.7
-            
-            details = {
-                'model_type': 'random_forest',
-                'prob_human': float(prob_human),
-                'prediction': 'human' if is_human else 'bot',
-            }
-            
-        return is_human, float(prob_human), details
-        
+            details = {'model_type': 'random_forest', 'prob_human': float(prob_human), 'prediction': 'human' if is_human else 'bot'}
+        return (is_human, float(prob_human), details)
     except (ImportError, FileNotFoundError, AttributeError, Exception) as e:
-        # Try portable model first
         try:
             return predict_portable(df_session, metadata)
         except Exception as e2:
-            # Fallback to heuristic if portable model also fails
-            print(f"Warning: ML models failed (Sklearn: {str(e)}, Portable: {str(e2)})")
+            print(f'Warning: ML models failed (Sklearn: {str(e)}, Portable: {str(e2)})')
             raise e2
 
-def predict_human_prob(df_session: pd.DataFrame, metadata: Optional[Dict] = None) -> float:
-    """
-    Legacy function for backward compatibility
-    Returns probability of being human (0-1)
-    
-    Args:
-        df_session: DataFrame with session events
-        metadata: Optional metadata dict
-    
-    Returns:
-        Probability of being human (0-1)
-    """
-    is_human, confidence, _ = predict_slider(df_session, metadata)
+def predict_human_prob(df_session: pd.DataFrame, metadata: Optional[Dict]=None) -> float:
+    (is_human, confidence, _) = predict_slider(df_session, metadata)
     return confidence
 
-# ============================================================
-# Backward Compatibility Functions
-# ============================================================
-
-def predict_layer(df_session: pd.DataFrame, captcha_id: Optional[str] = None, metadata: Optional[Dict] = None, prefer_supervised: bool = True) -> Tuple[bool, float, Dict]:
-    """
-    Backward compatibility wrapper for predict_slider
-    Maintains compatibility with existing code that uses predict_layer
-    
-    Args:
-        df_session: DataFrame with session events
-        captcha_id: Optional captcha ID (ignored, kept for compatibility)
-        metadata: Optional metadata dict
-        prefer_supervised: Ignored (kept for compatibility)
-    
-    Returns:
-        (is_human: bool, confidence: float, details: dict)
-    """
+def predict_layer(df_session: pd.DataFrame, captcha_id: Optional[str]=None, metadata: Optional[Dict]=None, prefer_supervised: bool=True) -> Tuple[bool, float, Dict]:
     return predict_slider(df_session, metadata)
