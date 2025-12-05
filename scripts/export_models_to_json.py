@@ -60,12 +60,12 @@ def main():
         ensemble = joblib.load(ensemble_path)
         scaler_path = MODELS_DIR / 'slider_classifier_scaler.pkl'
         scaler = joblib.load(scaler_path)
-        print('Models loaded. Converting to JSON...')
+        print('Models loaded. Converting to JSON')
         portable_model = {'scaler': export_scaler(scaler), 'random_forest': export_random_forest(ensemble['random_forest']), 'gradient_boosting': export_gradient_boosting(ensemble['gradient_boosting'])}
-        print(f'Saving to {OUTPUT_FILE}...')
+        print(f'Saving to {OUTPUT_FILE}')
         with open(OUTPUT_FILE, 'w') as f:
             json.dump(portable_model, f)
-        print(f'Done! File size: {OUTPUT_FILE.stat().st_size / 1024 / 1024:.2f} MB')
+        print(f'File size: {OUTPUT_FILE.stat().st_size / 1024 / 1024:.2f} MB')
     except Exception as e:
         print(f'Error exporting models: {e}')
         import traceback

@@ -20,7 +20,9 @@ import sys
 import os
 import argparse
 from pathlib import Path
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 try:
     from dotenv import load_dotenv
     env_path = BASE_DIR / '.env'
@@ -28,6 +30,7 @@ try:
         load_dotenv(env_path)
 except ImportError:
     pass
+
 SCRIPTS_DIR = BASE_DIR / 'scripts'
 DATA_DIR = BASE_DIR / 'data'
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -607,11 +610,11 @@ class LLMCaptchaAttacker:
             result = {'prob_human': float(prob_human), 'decision': decision, 'num_events': len(df), 'is_human': prob_human >= 0.5}
             prediction = {'is_bot': bool(decision == 'bot'), 'classification': 'BOT' if decision == 'bot' else 'HUMAN', 'metadata': metadata}
             print(f'\n  ML Classification Results:')
-            print(f"{'=' * 60}")
+            print(f"\n")
             print(f"   Classification: {prediction['classification']}")
             print(f"   Is Bot: {prediction['is_bot']}")
             print(f'\n   Details:')
-            print(f"{'=' * 60}")
+            print(f"\n")
             return prediction
         except ImportError as e:
             print(f'  Error importing ml_core: {e}')
