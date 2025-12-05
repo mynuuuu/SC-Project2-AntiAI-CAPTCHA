@@ -362,7 +362,7 @@ class CVAttacker:
                     if abs(difference) > 1:
                         logger.info("Attempting to set slider position directly via JavaScript...")
                         try:
-                            self.driver.execute_script(f, slider_button)
+                            self.driver.execute_script("arguments[0].style.left = arguments[1] + 'px';", slider_button, target_puzzle_position)
 
                             time.sleep(0.5)
 
@@ -1154,7 +1154,7 @@ class CVAttacker:
                     target_angle_py = float(target_dial_angle)
                     current_angle_py = float(current_dial_rotation)
 
-                    self.driver.execute_script(, dial_element, target_angle_py, current_angle_py)
+                    self.driver.execute_script("arguments[0].style.transform = 'rotate(' + arguments[1] + 'deg)';", dial_element, target_angle_py)
 
                     if self.use_model_classification or self.save_behavior_data:
                         num_samples = 10
@@ -1400,7 +1400,7 @@ class CVAttacker:
                 rotation_changed = False
 
                 try:
-                    self.driver.execute_script(, button_to_click)
+                    self.driver.execute_script("arguments[0].click();", button_to_click)
                     time.sleep(0.3)
                     rotation_after = get_current_rotation_dom()
                     if abs(rotation_after - rotation_before) >= 1:

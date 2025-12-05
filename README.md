@@ -2,61 +2,36 @@
 
 Anti AI CAPTCHA system built for Scalable Computing Main Project 2. A comprehensive slider-based CAPTCHA system with integrated behavior tracking and machine learning for human vs. bot detection.
 
-## Features
-
-###   Slider CAPTCHA System
-- Interactive puzzle-based verification
-- Multiple captcha instances
-- Success/failure visual feedback
-- Mobile and desktop support
-
-###   Behavior Tracking (NEW!)
-- **Real-time mouse movement tracking**
-- **Automatic CSV export** of behavior data
-- **20+ metrics** captured per event (velocity, acceleration, direction, timing, etc.)
-- **Visual recording indicator** during interaction
-- Both human and bot behavior data collection
-
-### 🤖 Machine Learning Models
-- Random Forest classifier
-- Gradient Boosting classifier
-- Pre-trained models in `/models/`
-- Training scripts in `/scripts/`
-
-## Project Structure
-
-```
-SC-Project2-AntiAI-CAPTCHA/
-├── src/                          # React application source
-│   ├── App.js                    # Main app component
-│   ├── CustomSliderCaptcha.js    # Slider captcha component with tracking
-│   ├── useBehaviorTracking.js    # Behavior tracking hook (NEW!)
-│   └── *.css                     # Styling files
-├── behaviour_analysis/           # Standalone HTML behavior capture
-│   ├── capture_behavior.html     # Original HTML tracker
-│   ├── behavior_server.py        # Flask server for data collection
-│   └── behavior_data/            # Collected behavior data
-├── data/                         # Training datasets
-│   ├── human_behavior_*.csv      # Human interaction data
-│   └── bot_behavior.csv          # Bot interaction data
-├── models/                       # Trained ML models
-│   ├── rf_model.pkl              # Random Forest model
-│   └── gb_model.pkl              # Gradient Boosting model
-├── scripts/                      # Utility scripts
-│   ├── train_model.py            # Model training script
-│   ├── simulate_bots.py          # Bot behavior generator
-│   └── ml_core.py                # ML utilities
-└── BEHAVIOR_TRACKING.md          # Detailed tracking documentation (NEW!)
-```
-
-## Getting Started
-
 ### Prerequisites
 - Node.js (v14 or higher)
-- Python 3.9+ (for ML scripts and server)
+- Python 3.10+ (Python 3.9 has compatibility issues with google-generativeai)
 - npm or yarn
 
-### Installation
+### Quick Start - Run Demo/Emulation
+
+To run the complete demo with frontend, backend, and all attackers:
+
+```bash
+./runme.sh
+```
+
+This script will:
+1. Install all npm and Python dependencies
+2. Start the backend server (Flask on port 5001)
+3. Start the frontend (React on port 3000)
+4. Run all attackers sequentially:
+   - Computer Vision attacker
+   - LLM Sycophancy attacker (requires `GEMINI_API_KEY` environment variable)
+   - Universal LLM attacker (requires `GEMINI_API_KEY` environment variable)
+
+**Note**: For LLM attackers to run, set the `GEMINI_API_KEY` environment variable:
+```bash
+export GEMINI_API_KEY="your_api_key_here" && ./runme.sh
+```
+
+The script will keep the frontend and backend running after all attackers complete. Press Ctrl+C to stop.
+
+### Manual Installation
 
 1. **Clone the repository:**
    ```bash
@@ -69,14 +44,14 @@ SC-Project2-AntiAI-CAPTCHA/
    npm install
    ```
 
-3. **Install Python dependencies (for ML and server):**
+3. **Install Python dependencies:**
    ```bash
-   cd behaviour_analysis
+   python3 -m venv venv
+   source venv/bin/activate
    pip install -r requirements.txt
-   cd ..
    ```
 
-### Running the Application
+### Running the Application Manually
 
 **IMPORTANT**: You must start the server first for behavior tracking to work.
 
@@ -93,7 +68,7 @@ SC-Project2-AntiAI-CAPTCHA/
 2. **Start the React app (in a new terminal):**
    ```bash
    # from project root
-   echo "REACT_APP_API_BASE_URL=http://localhost:5001" > .env.local
+   export REACT_APP_API_BASE_URL=http://localhost:5001
    npm start
    ```
    The React app reads `REACT_APP_API_BASE_URL` to know where to send behavior data.
@@ -116,21 +91,6 @@ See [SERVER_SETUP.md](SERVER_SETUP.md) for detailed instructions and
 | `BEHAVIOR_SERVER_URL` | `http://localhost:5001/save_captcha_events` | Used by attacker tooling; override when pointing to prod |
 
 Create `.env.local` (React) and `.env` (backend) files as needed to override these values for development vs production.
-
-### Hybrid Setup: Local Attackers, Hosted UI/API
-
-You can keep the attackers and ML tooling local while the “basic” CAPTCHA stack runs on Render (backend) + Vercel (frontend):
-
-1. **Deploy backend** using `RENDER_DEPLOYMENT.md` and set `REACT_APP_API_BASE_URL` in Vercel to the Render URL. Regular users now hit the hosted stack.
-2. **Local attackers**: leave `BEHAVIOR_SERVER_URL` unset so it defaults to `http://localhost:5001/save_captcha_events`, or explicitly export it in your shell before running attacker scripts:
-   ```bash
-   export BEHAVIOR_SERVER_URL=http://localhost:5001/save_captcha_events
-   python attacker/sycophancy/llm_sycophancy_attacker.py
-   ```
-3. **Local backend for research**: run `python behaviour_analysis/behavior_server.py` locally when you want to feed attackers into a private instance; this won’t interfere with the hosted service.
-4. **Switching contexts**: point the attackers to the hosted backend only when you intentionally want to probe prod—change `BEHAVIOR_SERVER_URL` to the Render URL and revert when done.
-
-This keeps production traffic separated while you continue iterating on attacker logic and ML experiments entirely on your dev machine.
 
 ## Using the Behavior Tracking
 
@@ -194,46 +154,6 @@ Models are evaluated on:
 ### 4. Deploy
 Integrate trained models (`.pkl` files) with your captcha system for real-time classification.
 
-## Example Use Cases
-
-### Research & Analysis
-- Study human interaction patterns
-- Compare bot vs human behavior
-- Develop advanced detection algorithms
-
-### Security
-- Add extra verification layer
-- Detect automated attacks
-- Improve CAPTCHA resistance
-
-### UX Optimization
-- Analyze user friction points
-- Optimize slider sensitivity
-- Reduce false positives
-
-## API Reference
-
-### `useBehaviorTracking()` Hook
-
-```javascript
-const {
-  isRecording,      // boolean: tracking active?
-  sessionId,        // string: current session ID
-  startRecording,   // function: start tracking
-  stopRecording,    // function: stop tracking
-  captureEvent,     // function: capture a single event
-  saveToCSV,        // function: export to CSV file
-  sendToServer,     // function: send to backend server
-  getStats,         // function: get current statistics
-  reset,            // function: reset tracking state
-  events            // array: captured events
-} = useBehaviorTracking();
-```
-
-### CSV Data Structure
-
-See [BEHAVIOR_TRACKING.md](BEHAVIOR_TRACKING.md) for complete field documentation.
-
 ## Technologies Used
 
 - **Frontend**: React.js, CSS3
@@ -241,31 +161,6 @@ See [BEHAVIOR_TRACKING.md](BEHAVIOR_TRACKING.md) for complete field documentatio
 - **Backend**: Flask, Flask-CORS (optional)
 - **Machine Learning**: scikit-learn, pandas, numpy
 - **Data Processing**: Python, CSV
-
-## Development
-
-### Running Tests
-```bash
-npm test
-```
-
-### Building for Production
-```bash
-npm run build
-```
-
-### Linting
-```bash
-npm run lint
-```
-
-## Contributing
-
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
 
 ## Privacy & Ethics
 
@@ -276,35 +171,8 @@ This system is designed for research and legitimate security purposes. When depl
 - Implement appropriate data retention policies
 - Anonymize sensitive information
 
-## Troubleshooting
-
-### CSV files not downloading?
-- Check browser pop-up blocker settings
-- Look in Downloads folder
-- Check console for errors
-
-### Recording not starting?
-- Ensure you're dragging, not just clicking
-- Check console logs for initialization
-- Verify React hooks are working
-
-### Server connection issues?
-- Verify Flask server is running
-- Check CORS configuration
-- Confirm correct port (5001)
-
-See [BEHAVIOR_TRACKING.md](BEHAVIOR_TRACKING.md) for more troubleshooting tips.
-
-## License
-
-[Add your license here]
-
-## Authors
-
-- Scalable Computing Project 2 Team
-
 ## Acknowledgments
 
 - Thanks to all contributors
 - Inspired by modern CAPTCHA systems
-- Built for educational and research purposes 
+- Built for educational and research purposes
